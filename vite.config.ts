@@ -14,7 +14,6 @@ export default defineConfig({
       '@': resolve(__dirname, 'src'),
     },
   },
-  build: {
-    target: 'esnext'
-  }
+build: { target: 'es2021' }
+
 })

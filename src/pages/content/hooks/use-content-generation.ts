@@ -3114,7 +3114,7 @@ Add exactly one internal-link anchor placeholder somewhere natural: [anchor text
 
 If {{brand_name}} is provided, mention it once in the final section only, first-person plural (“we provide …”), and nowhere else.
 
-Keep {{keywords}} usage sparse and natural; bold a target keyword only when it truly fits the sentence, not every section.
+Keep ${keyword} usage sparse and natural; bold a target keyword only when it truly fits the sentence, not every section.
 
 Use a numbered list only for sequential steps or numeric checks; otherwise write in paragraphs.
 
@@ -3138,7 +3138,7 @@ one short title
 
 tone like an 15 - 20 year old kid 
 
-the conte mus be not look like ai  
+the content must be not look like ai  
 
 please add human touch in content the human touch is aur priorty please generate human like words uses in daily  life simple words .
 

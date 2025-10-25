@@ -610,7 +610,6 @@
 
 
 // src/components/ExcelProjectsCards.jsx
-import React from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -626,7 +625,11 @@ export function ExcelProjectsCards() {
   const { excelProjects, contentItems } = useContentGeneration();
   const navigate = useNavigate();
 
-  const getStatusIcon = (status) => {
+  interface ExcelProjectStatus {
+    status: "pending" | "processing" | "completed" | "error";
+  }
+
+  const getStatusIcon = (status: ExcelProjectStatus["status"]): JSX.Element | null => {
     switch (status) {
       case "pending": return <IconClock className="h-4 w-4 text-yellow-500" />;
       case "processing": return <IconClock className="h-4 w-4 text-blue-500 animate-spin" />;
@@ -636,7 +639,11 @@ export function ExcelProjectsCards() {
     }
   };
 
-  const getStatusBadge = (status) => {
+  interface ExcelProjectStatus {
+    status: "pending" | "processing" | "completed" | "error";
+  }
+
+  const getStatusBadge = (status: ExcelProjectStatus["status"]): JSX.Element | null => {
     switch (status) {
       case "pending": return <Badge variant="outline" className="text-yellow-600 border-yellow-600">Pending</Badge>;
       case "processing": return <Badge variant="outline" className="text-blue-600 border-blue-600">Processing</Badge>;
@@ -646,9 +653,13 @@ export function ExcelProjectsCards() {
     }
   };
 
-  const handleViewProject = (projectId) => navigate(`/content?project=${projectId}`);
+  interface HandleViewProjectFn {
+    (projectId: string): void;
+  }
 
-  const handleDownloadProject = (project) => {
+  const handleViewProject: HandleViewProjectFn = (projectId) => navigate(`/content?project=${projectId}`);
+
+  const handleDownloadProject = (project: { id: string; fileName: string }) => {
     const projectContentItems = (contentItems ?? []).filter((item) => item.fileId === project.id);
     if (projectContentItems.length === 0) {
       toast.error("No content found for this project");

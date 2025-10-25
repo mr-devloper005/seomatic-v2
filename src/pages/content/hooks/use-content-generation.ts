@@ -3550,7 +3550,7 @@ console.log("ENV →", import.meta.env);
       let processedCount = 0;
       let index = 0;
 
-      const generateWithRetries = async (keyword: string, targetUrl?: string | null): Promise<string | null> => {
+      const generateWithRetries = async (keyword: string): Promise<string | null> => {
         let attempt = 0;
         const MAX_ATTEMPTS = 3;
         let backoff = 600;
@@ -3607,7 +3607,7 @@ console.log("ENV →", import.meta.env);
         const curIndex = index;
         const task = (async () => {
           try {
-            const generated = await generateWithRetries(kw, url);
+            const generated = await generateWithRetries(kw);
             if (generated) {
               const contentItem: ContentItem = {
                 id: `${fileId}-${curIndex}-${Date.now()}`,

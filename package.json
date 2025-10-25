@@ -1,5 +1,5 @@
 {
-  "name": "seomatic-frontend",
+  "name": "finfx-admin-panel",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -70,14 +70,9 @@
     "tw-animate-css": "^1.3.6",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.39.1",
-    "vite": "^7.1.2"
-  },
+    "vite": "^7.1.2",
 
-
-  "overrides": {
-    "rollup": "4.24.0"
-  },
-  "optionalDependencies": {
+    "rollup": "4.24.0",
     "@rollup/rollup-linux-x64-gnu": "4.24.0",
     "@rollup/rollup-linux-x64-musl": "4.24.0",
     "@rollup/rollup-darwin-arm64": "4.24.0",
@@ -85,5 +80,8 @@
     "@rollup/rollup-win32-x64-msvc": "4.24.0",
     "@rollup/rollup-win32-ia32-msvc": "4.24.0",
     "@rollup/rollup-win32-arm64-msvc": "4.24.0"
+  },
+  "overrides": {
+    "rollup": "4.24.0"
   }
 }

@@ -3055,6 +3055,13 @@ interface ExcelProject {
   error?: string;
 }
 
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+
+if (!apiKey) {
+  console.error("❌ Gemini API key is missing! Please set VITE_GEMINI_API_KEY in .env or Vercel settings.");
+}
+
+
 type GenerateProgressCallback = (progressPercentage: number) => void;
 
 /* ---------- Constants & Prompt ---------- */

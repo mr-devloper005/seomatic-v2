@@ -3076,115 +3076,80 @@ const SESSION_KEY = "open-content-item_v1";
 const MODELS = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro"] as const;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// const buildPrompt = (keyword: string) =>
-//   `You are a seasoned British editor who actually does this work. Write like a person: specific, a bit idiosyncratic, sometimes blunt, never salesy. Prioritise clarity, lived detail, and practical judgement over polish. Do not mention prompts, AI, rules, or your process.
+const buildPrompt = (keyword: string) =>
+  `You are a seasoned British editor who actually does this work. Write like a person: specific, a bit idiosyncratic, sometimes blunt, never salesy. Prioritise clarity, lived detail, and practical judgement over polish. Do not mention prompts, AI, rules, or your process.
 
-// Inputs
+Inputs
 
-// TOPIC: ${keyword}
+TOPIC: ${keyword}
 
-// DOMAIN FOCUS (stay strictly on this): {{domain_focus}}
-// Main keyword is ${keyword}.
+DOMAIN FOCUS (stay strictly on this): {{domain_focus}}
+Main keyword is ${keyword}.
 
-// Title must be 60 to 70 characters long.
+Title must be 60 to 70 characters long.
 
-// MAIN IDEA WORDS (use sparingly; prefer synonyms): ${keyword}
+MAIN IDEA WORDS (use sparingly; prefer synonyms): ${keyword}
 
-// AUDIENCE: People who already care and want practical, hands-on guidance.
+AUDIENCE: People who already care and want practical, hands-on guidance.
 
-// STYLE (tone guide only): human  
+STYLE (tone guide only): human  
 
-// What to produce
+What to produce
 
-// A complete article that feels brutally human: empathetic, frank, grounded in real practice. Use British English.
+A complete article that feels brutally human: empathetic, frank, grounded in real practice. Use British English.
 
-// Start with a quick, vivid micro-scene tied to (≤40 words). No greetings.
+Start with a quick, vivid micro-scene tied to (≤40 words). No greetings.
 
-// Then state why this matters now and your core stance in plain words.
+Then state why this matters now and your core stance in plain words.
 
-// Create 5–7 short, clear section headings. Make section lengths uneven (roughly 80–140 words each; some shorter, one longer).
+Create 5–7 short, clear section headings. Make section lengths uneven (roughly 80–140 words each; some shorter, one longer).
 
-// Mix sentence lengths. Use plenty of short lines for punch. Allow one natural-sounding imperfection (an aside or informal run-on) if it helps voice.
+Mix sentence lengths. Use plenty of short lines for punch. Allow one natural-sounding imperfection (an aside or informal run-on) if it helps voice.
 
-// Work in concrete, checkable specifics that practitioners recognise: measurements, tolerances, timings, file sizes, tool names, materials, costs, noise levels, etc. Include at least four tiny numbers/units (e.g., “±0.3 mm”, “190–220 gsm”, “20-minute cure”, “~500 KB”).
+Work in concrete, checkable specifics that practitioners recognise: measurements, tolerances, timings, file sizes, tool names, materials, costs, noise levels, etc. Include at least four tiny numbers/units (e.g., “±0.3 mm”, “190–220 gsm”, “20-minute cure”, “~500 KB”).
 
-// Include one small anecdote (1–3 sentences) and one counter-intuitive tip that actually helps.
+Include one small anecdote (1–3 sentences) and one counter-intuitive tip that actually helps.
 
-// Add exactly one internal-link anchor placeholder somewhere natural: [anchor text] (no URL).
+Add exactly one internal-link anchor placeholder somewhere natural: [anchor text] (no URL).
 
-// If {{brand_name}} is provided, mention it once in the final section only, first-person plural (“we provide …”), and nowhere else.
+If {{brand_name}} is provided, mention it once in the final section only, first-person plural (“we provide …”), and nowhere else.
 
-// Keep ${keyword} usage sparse and natural; bold a target keyword only when it truly fits the sentence, not every section.
+Keep ${keyword} usage sparse and natural; bold a target keyword only when it truly fits the sentence, not every section.
 
-// Use a numbered list only for sequential steps or numeric checks; otherwise write in paragraphs.
+Use a numbered list only for sequential steps or numeric checks; otherwise write in paragraphs.
 
-// Bans & guardrails
+Bans & guardrails
 
-// Stay strictly on topic: {{domain_focus}}. Do not drift into unrelated products, medical devices, or generic tech.
+Stay strictly on topic: {{domain_focus}}. Do not drift into unrelated products, medical devices, or generic tech.
 
-// Avoid these phrases anywhere: “In conclusion,” “To summarise,” “Moreover,” “Furthermore,” “At the end of the day,” “look no further,” “tailor,” “dive,” “delve,” “step into,” “seamless experience.”
+Avoid these phrases anywhere: “In conclusion,” “To summarise,” “Moreover,” “Furthermore,” “At the end of the day,” “look no further,” “tailor,” “dive,” “delve,” “step into,” “seamless experience.”
 
-// No meta-commentary about writing, AI, or detectors. No filler clichés.
+No meta-commentary about writing, AI, or detectors. No filler clichés.
 
-// Don’t over-explain basics the audience already knows; show advanced judgement instead.
+Don’t over-explain basics the audience already knows; show advanced judgement instead.
 
-// Quality bar (do silently before returning)
+Quality bar (do silently before returning)
 
-// British spelling; tone is candid, practical, and lived-in.
+British spelling; tone is candid, practical, and lived-in.
 
-// Sections are uneven; cadence varies; plenty of short sentences.
+Sections are uneven; cadence varies; plenty of short sentences.
 
-// one short title 
+one short title 
 
-// tone like an 15 - 20 year old kid 
+tone like an 15 - 20 year old kid 
 
-// the content must be not look like ai  
+the content mus be not look like ai  
 
-// please add human touch in content the human touch is aur priorty please generate human like words uses in daily  life simple words .
+please add human touch in content the human touch is aur priorty please generate human like words uses in daily  life simple words .
 
-// ≥4 concrete micro-details with real numbers/units.
+≥4 concrete micro-details with real numbers/units.
 
-// [anchor text] ${keyword} appears once. Brand appears once (if provided) only in the final section.
+[anchor text] ${keyword} appears once. Brand appears once (if provided) only in the final section.
 
-// IMPORTANT (for editor linking): Include **exactly one** machine-visible anchor marker in the HTML/text where you want the keyword hyperlinked. Use this exact token: [ANCHOR:${keyword}] (including square brackets) placed immediately before the target phrase or replacing the phrase. Example: "We recommend [ANCHOR:FDA registered hearing aids] for...". Make sure the literal text '[ANCHOR:${keyword}]' appears once in the response.
-
-
-// No topic drift; no banned phrases; no meta.`;
+IMPORTANT (for editor linking): Include **exactly one** machine-visible anchor marker in the HTML/text where you want the keyword hyperlinked. Use this exact token: [ANCHOR:${keyword}] (including square brackets) placed immediately before the target phrase or replacing the phrase. Example: "We recommend [ANCHOR:FDA registered hearing aids] for...". Make sure the literal text '[ANCHOR:${keyword}]' appears once in the response.
 
 
-const buildPrompt = (keyword: string) => `
-You are a seasoned British editor. Write like a person: specific, a bit idiosyncratic, never salesy. British spelling.
-
-TASK
-Return STRICT JSON only (no prose) with this exact shape:
-{
-  "title": "<60-70 characters headline>",
-  "html": "<well-structured HTML article>"
-}
-
-CONSTRAINTS
-- "title": 60–70 characters. No quotes in the title text itself.
-- "html": Start with a short vivid micro-scene (≤40 words).
-- Then a one-paragraph why-it-matters.
-- Then 5–7 uneven sections using <h2> and <h3>.
-- Include ≥4 concrete micro-details with real numbers/units.
-- Include one small anecdote (1–3 sentences).
-- Include one counter-intuitive, useful tip.
-- End with a <h2>Conclusion</h2> section (do NOT use the phrase "In conclusion,").
-- Use British English and natural, human tone (15–20yo vibe but clear).
-- Keep ${keyword} usage sparse and natural.
-- IMPORTANT: Include **exactly one** marker for link placement: [ANCHOR:${keyword}] in the right spot in the HTML body. Do not print the keyword elsewhere. That marker stands for the single occurrence of the keyword which we’ll hyperlink.
-- No meta talk about prompts/AI. No banned clichés (“look no further”, “step into”, etc.).
-- Output JSON ONLY. No markdown code fences.
-
-INPUT
-keyword: ${keyword}
-domain_focus: {{domain_focus}}
-brand_name: {{brand_name}}
-`;
-
-
-
+No topic drift; no banned phrases; no meta.`;
 
 /* ---------- Excel parsing helpers (with URL detection) ---------- */
 function isLikelyUrlOrDomain(s: string | undefined | null) {

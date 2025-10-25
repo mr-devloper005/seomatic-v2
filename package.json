@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && cross-env ROLLUP_USE_NODE_JS_IMPLEMENTATION=true vite build",
+    "build": "tsc -b && cross-env ROLLUP_WASM=1 ROLLUP_USE_NODE_JS_IMPLEMENTATION=true ROLLUP_SKIP_NODE_PLATFORM_CHECK=1 vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -71,5 +71,11 @@
     "typescript": "^5.6.3",
     "typescript-eslint": "^8.39.1",
     "vite": "^7.1.2"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-linux-x64-gnu": "^4.24.0"
+  },
+  "overrides": {
+    "rollup": "^4.24.0"
   }
 }

@@ -1,16 +1,14 @@
 {
-  "name": "finfx-admin-panel",
+  "name": "seomatic-frontend",
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "engines": {
-    "node": "20.x"
-  },
+  "engines": { "node": "20.x" },
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && cross-env ROLLUP_WASM=1 ROLLUP_USE_NODE_JS_IMPLEMENTATION=true ROLLUP_SKIP_NODE_PLATFORM_CHECK=1 vite build",
-    "lint": "eslint .",
-    "preview": "vite preview"
+    "build": "vite build",
+    "preview": "vite preview --port 4173",
+    "lint": "eslint ."
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -36,6 +34,7 @@
     "@tabler/icons-react": "^3.34.1",
     "@tailwindcss/vite": "^4.1.12",
     "@tanstack/react-table": "^8.21.3",
+    "@vitejs/plugin-react": "^5.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
@@ -52,30 +51,22 @@
     "tailwind-merge": "^3.3.1",
     "tailwindcss": "^4.1.12",
     "vaul": "^1.1.2",
+    "vite": "7.1.12",
     "xlsx": "^0.18.5",
     "zod": "^4.0.17"
   },
   "devDependencies": {
     "@eslint/js": "^9.33.0",
-    "@types/node": "^20.12.12",
+    "@types/node": "^24.3.0",
     "@types/react": "18",
     "@types/react-dom": "18",
-    "@vitejs/plugin-react": "^5.0.0",
-    "cross-env": "^7.0.3",
+    "@types/react-router-dom": "^5.3.3",
     "eslint": "^9.33.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
     "gh-pages": "^6.3.0",
     "globals": "^16.3.0",
     "tw-animate-css": "^1.3.6",
-    "typescript": "^5.6.3",
-    "typescript-eslint": "^8.39.1",
-    "vite": "^7.1.2"
-  },
-  "optionalDependencies": {
-    "@rollup/rollup-linux-x64-gnu": "^4.24.0"
-  },
-  "overrides": {
-    "rollup": "^4.24.0"
+    "typescript": "~5.8.3"
   }
 }

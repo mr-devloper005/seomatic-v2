@@ -4319,7 +4319,7 @@ export function useContentGeneration(passedApiKey?: string) {
 
   const deleteProject = (projectId: string) => {
     setExcelProjects((prev) => (prev ?? []).filter((p) => p.id !== projectId));
-    setContentItems((prev) => (prev ?? []).filter((c) => c.fileId !== projectId));
+    setContentItems((prev) => (prev ?? []).filter((c) => c.fileId !== projectId) );
     toast.success("Project deleted");
   };
 

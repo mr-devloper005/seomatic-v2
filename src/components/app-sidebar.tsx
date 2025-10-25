@@ -1,12 +1,8 @@
 import * as React from "react";
 import {
-  IconCellSignal5,
-  IconCreditCard,
   IconDashboard,
   IconInnerShadowTop,
-  IconRobot,
   IconSettings,
-  IconUsers,
   IconFileText,
 } from "@tabler/icons-react";
 

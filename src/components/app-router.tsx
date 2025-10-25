@@ -4,7 +4,6 @@ import { useAuth } from "@/contexts/auth-context";
 import { PublicRoute } from "./public-route";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { Layout } from "./app-sidebar-layout";
-import HomePage from "@/pages/home";
 import UsersPage from "@/pages/users";
 import LoginPage from "@/pages/login";
 import SubscriptionPage from "@/pages/subscriptions";

@@ -1513,7 +1513,7 @@ export default function ContentEditorPage(): React.ReactElement {
               const html = `<h1>${escapeHtml(title)}</h1>\n` + (q ? q.root.innerHTML : editorHtml);
               navigator.clipboard
                 .writeText(html)
-                .then(() => alert("HTML copied to clipboard"))
+                .then(() => alert("HTML copied to clipboard")      )
                 .catch(() => alert("Copy failed"));
             }}
             style={{ padding: "10px 14px", borderRadius: 6 }}

@@ -3084,6 +3084,9 @@ Inputs
 TOPIC: ${keyword}
 
 DOMAIN FOCUS (stay strictly on this): {{domain_focus}}
+Main keyword is ${keyword}.
+
+Title must be 60 to 70 characters long.
 
 MAIN IDEA WORDS (use sparingly; prefer synonyms): ${keyword}
 
@@ -3095,7 +3098,7 @@ What to produce
 
 A complete article that feels brutally human: empathetic, frank, grounded in real practice. Use British English.
 
-Start with a quick, vivid micro-scene tied to {{domain_focus}} (≤40 words). No greetings.
+Start with a quick, vivid micro-scene tied to (≤40 words). No greetings.
 
 Then state why this matters now and your core stance in plain words.
 

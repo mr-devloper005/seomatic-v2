@@ -3026,6 +3026,13 @@ import { toast } from "sonner";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import * as XLSX from "xlsx";
 
+
+console.log("🧩 ENV TEST →", {
+  keyType: typeof import.meta.env.VITE_GEMINI_API_KEY,
+  value: import.meta.env.VITE_GEMINI_API_KEY,
+});
+
+
 /**
  * useContentGeneration
  * - Full updated copy with robust model extraction, fallback prompt, improved logging,
@@ -3054,11 +3061,11 @@ interface ExcelProject {
   createdAt: string;
   error?: string;
 }
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY?.trim();
 
-const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-
-if (!apiKey) {
-  console.error("❌ Gemini API key is missing! Please set VITE_GEMINI_API_KEY in .env or Vercel settings.");
+if (!apiKey || apiKey.length < 30) {
+  console.error("❌ Gemini API key missing or invalid! ENV:", import.meta.env);
+  throw new Error("Gemini API key not set");
 }
 
 
@@ -3321,10 +3328,11 @@ function extractKeywordsFromWorkbookBufferWithUrls(buffer: ArrayBuffer | Uint8Ar
 /* ---------- Client reuse ---------- */
 const clientCache: Record<string, any> = {};
 function getClient(apiKey: string) {
-  if (!apiKey) throw new Error("API key required for getClient");
-  if (clientCache[apiKey]) return clientCache[apiKey];
-  clientCache[apiKey] = new GoogleGenerativeAI(apiKey);
-  return clientCache[apiKey];
+  const cleanKey = apiKey?.trim();
+  if (!cleanKey || cleanKey.length < 30) throw new Error("API key required for getClient");
+  if (clientCache[cleanKey]) return clientCache[cleanKey];
+  clientCache[cleanKey] = new GoogleGenerativeAI(cleanKey);
+  return clientCache[cleanKey];
 }
 
 /* ---------- Model output extraction & fallback ---------- */

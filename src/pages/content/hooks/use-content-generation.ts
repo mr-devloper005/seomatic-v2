@@ -3754,102 +3754,761 @@
 
 
 
+// // src/hooks/use-content-generation.ts
+// import { useState } from "react";
+// import { GoogleGenerativeAI } from "@google/generative-ai";
+// import { toast } from "sonner";
+// import { useLocalStorage } from "@/hooks/use-local-storage";
+// import * as XLSX from "xlsx";
+
+// /**
+//  * useContentGeneration
+//  * - JSON-based output (title + html)
+//  * - Title (60–70 chars) from Gemini (not the keyword)
+//  * - Exactly one keyword occurrence, hyperlinked with Excel URL
+//  * - Structured article with Conclusion
+//  * - Robust Excel parsing (optional URL from same row)
+//  * - Editor launcher
+//  */
+
+// /* ---------- Types ---------- */
+// export interface ContentItem {
+//   id: string;
+//   keyword: string;
+//   generatedContent: string; // HTML
+//   fileId: string;
+//   fileName: string;
+//   createdAt: string; // ISO
+//   title?: string;
+//   targetUrl?: string | null; // hyperlink destination for the (single) keyword
+// }
+
+// interface ExcelProject {
+//   id: string;
+//   fileName: string;
+//   status: "pending" | "processing" | "completed" | "error";
+//   totalKeywords: number;
+//   processedKeywords: number;
+//   createdAt: string;
+//   error?: string;
+// }
+
+// type GenerateProgressCallback = (progressPercentage: number) => void;
+
+// console.log("ENV →", import.meta.env);
+
+// /* ---------- Constants ---------- */
+// const SESSION_KEY = "open-content-item_v1";
+// const MODELS = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro"] as const;
+// const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// /* ---------- Prompt (returns STRICT JSON) ---------- */
+// const buildPrompt = (keyword: string) => `
+// You are a seasoned British editor. Natural, specific, not salesy. British spelling.
+
+// TASK
+// Return STRICT JSON only (no prose) with exactly this shape:
+// {
+//   "title": "<60-70 characters headline>",
+//   "html": "<well-structured HTML article>"
+// }
+
+// CONSTRAINTS
+// - "title": 60–70 characters. No quotes inside the title text itself.
+// - "html":
+//   - Start with a short vivid micro-scene (≤40 words).
+//   - Then a one-paragraph “why this matters”.
+//   - Then 5–7 uneven sections using <h2> and <h3>.
+//   - Include ≥4 concrete micro-details with real numbers/units (e.g., “±0.3 mm”, “190–220 gsm”, “20-minute cure”, “~500 KB”).
+//   - Include one small anecdote (1–3 sentences).
+//   - Include one counter-intuitive, useful tip.
+//   - End with a <h2>Conclusion</h2> section (do NOT start it with “In conclusion,”).
+// - Use British English and a clear, human tone (15–20yo vibe but practical).
+// - Keep ${keyword} usage sparse and natural.
+// - IMPORTANT: Include **exactly one** marker for link placement: [ANCHOR:${keyword}] at the spot where the single visible keyword should appear. Do not use the keyword anywhere else in the text. The marker stands for the only occurrence we will hyperlink.
+// - No meta talk about prompts/AI or banned clichés (“look no further”, “step into”, etc.).
+// - Output JSON ONLY. No markdown fences.
+
+// INPUT
+// keyword: ${keyword}
+// domain_focus: {{domain_focus}}
+// brand_name: {{brand_name}}
+// `;
+
+// /* ---------- Excel parsing helpers (with URL detection) ---------- */
+// function isLikelyUrlOrDomain(s: string | undefined | null) {
+//   if (!s) return false;
+//   const trimmed = String(s).trim();
+//   if (!trimmed) return false;
+//   if (/^https?:\/\//i.test(trimmed)) return true;
+//   if (/^www\./i.test(trimmed)) return true;
+//   if (/^[a-z0-9\-]+(\.[a-z0-9\-]+)+$/i.test(trimmed) && !/\s/.test(trimmed)) return true;
+//   return false;
+// }
+// function sanitizeKeyword(raw: unknown): string {
+//   if (raw == null) return "";
+//   let v = String(raw).replace(/\u00A0/g, " ").trim();
+//   if (!v) return "";
+//   v = v.replace(/^\(?\s*\d+[\.\):-]?\s*/u, "").trim();
+//   v = v.replace(/^[\u2022\-\*]\s*/, "").trim();
+//   if (/^[\d\.,\s]+$/.test(v)) return "";
+//   if (v.length > 180) return "";
+//   if (isLikelyUrlOrDomain(v)) return "";
+//   if ((v.match(/[A-Za-z\u00C0-\u024F]/g) || []).length < 2) return "";
+//   v = v.replace(/^[\W_]+|[\W_]+$/g, "").trim();
+//   if (v.length < 2) return "";
+//   return v;
+// }
+// function pickKeywordColumn(rows: unknown[][]): number | null {
+//   if (!rows || rows.length === 0) return null;
+//   const headerCandidates = rows.slice(0, 5);
+//   let headerRowIndex = -1;
+//   for (let i = 0; i < headerCandidates.length; i++) {
+//     const r = headerCandidates[i];
+//     if (!Array.isArray(r)) continue;
+//     const nonEmpty = r.some((c) => typeof c === "string" && String(c).trim().length > 0);
+//     if (nonEmpty) { headerRowIndex = i; break; }
+//   }
+//   const headerRow = headerRowIndex >= 0 && Array.isArray(rows[headerRowIndex]) ? (rows[headerRowIndex] as unknown[]) : [];
+//   const headerNames = headerRow.map((c) => String(c ?? "").trim().toLowerCase());
+//   const preferred = ["keyword", "keywords", "topic", "title", "query", "search term", "focus keyword", "term", "phrase"];
+//   for (let i = 0; i < headerNames.length; i++) if (preferred.includes(headerNames[i])) return i;
+
+//   const lookahead = rows.slice(Math.max(0, headerRowIndex + 1), Math.min(rows.length, (headerRowIndex + 1) + 200));
+//   const maxCols = Math.max(...rows.map((r) => (Array.isArray(r) ? r.length : 0)), 0);
+//   let bestCol = -1, bestScore = 0;
+//   for (let col = 0; col < maxCols; col++) {
+//     let score = 0, total = 0;
+//     for (const r of lookahead) {
+//       const cell = Array.isArray(r) ? r[col] : undefined;
+//       const s = sanitizeKeyword(cell);
+//       if (s) score++;
+//       if (cell !== undefined && cell !== null && String(cell).trim() !== "") total++;
+//     }
+//     if (total === 0) continue;
+//     const weighted = score * 100 + Math.min(total, 100);
+//     if (weighted > bestScore) { bestScore = weighted; bestCol = col; }
+//   }
+//   if (bestCol >= 0) {
+//     let validCount = 0;
+//     for (const r of rows.slice(1, 201)) {
+//       const cell = Array.isArray(r) ? r[bestCol] : undefined;
+//       if (sanitizeKeyword(cell)) validCount++;
+//       if (validCount >= 2) break;
+//     }
+//     if (validCount >= 2) return bestCol;
+//   }
+//   return null;
+// }
+
+// type KeywordRow = { keyword: string; url?: string | null };
+
+// function extractKeywordsFromWorksheetWithUrls(worksheet: XLSX.WorkSheet): KeywordRow[] {
+//   const rows = XLSX.utils.sheet_to_json<unknown[]>(worksheet, { header: 1, raw: true }) as unknown[][];
+//   if (!rows || rows.length === 0) return [];
+//   const col = pickKeywordColumn(rows);
+//   if (col == null) return [];
+//   const dataRows = rows.slice(1);
+//   const found: KeywordRow[] = [];
+//   const seen = new Set<string>();
+//   const maxCols = Math.max(...rows.map((r) => (Array.isArray(r) ? r.length : 0)), 0);
+
+//   for (const r of dataRows) {
+//     if (!Array.isArray(r)) continue;
+//     const raw = r[col];
+//     const k = sanitizeKeyword(raw);
+//     if (!k || seen.has(k)) continue;
+
+//     let url: string | undefined;
+//     for (let offset = -3; offset <= 3; offset++) {
+//       if (offset === 0) continue;
+//       const idx = col + offset;
+//       if (idx < 0 || idx >= maxCols) continue;
+//       const other = r[idx];
+//       if (!other) continue;
+//       const s = String(other).trim();
+//       if (isLikelyUrlOrDomain(s)) {
+//         url = s;
+//         if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+//         break;
+//       }
+//     }
+//     if (!url) {
+//       for (let c = 0; c < maxCols; c++) {
+//         if (c === col) continue;
+//         const other = r[c];
+//         if (!other) continue;
+//         const s = String(other).trim();
+//         if (isLikelyUrlOrDomain(s)) {
+//           url = s;
+//           if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+//           break;
+//         }
+//       }
+//     }
+//     found.push({ keyword: k, url: url ?? null });
+//     seen.add(k);
+//   }
+
+//   if (found.length === 0) {
+//     for (let rIdx = 1; rIdx < rows.length; rIdx++) {
+//       const r = rows[rIdx];
+//       if (!Array.isArray(r)) continue;
+//       for (let c = 0; c < maxCols; c++) {
+//         const k = sanitizeKeyword(r[c]);
+//         if (k && !seen.has(k)) { found.push({ keyword: k, url: null }); seen.add(k); }
+//       }
+//       if (found.length > 0) break;
+//     }
+//   }
+//   return found;
+// }
+// function extractKeywordsFromWorkbookBufferWithUrls(buffer: ArrayBuffer | Uint8Array) {
+//   const workbook = XLSX.read(buffer, { type: "array" });
+//   const sheetNames = workbook.SheetNames ?? [];
+//   const combined: KeywordRow[] = [];
+//   const seen = new Set<string>();
+//   const perSheet: Record<string, number> = {};
+
+//   for (const sheetName of sheetNames) {
+//     try {
+//       const sheet = workbook.Sheets[sheetName];
+//       const sheetKeywords = extractKeywordsFromWorksheetWithUrls(sheet);
+//       perSheet[sheetName] = sheetKeywords.length;
+//       for (const k of sheetKeywords) {
+//         if (!seen.has(k.keyword)) { seen.add(k.keyword); combined.push(k); }
+//       }
+//       if (combined.length > 2000) break;
+//     } catch (e) {
+//       console.warn("worksheet parse failed:", sheetName, e);
+//     }
+//   }
+//   return { keywords: combined, perSheet };
+// }
+
+// /* ---------- Client reuse ---------- */
+// const clientCache: Record<string, any> = {};
+// function getClient(apiKey: string) {
+//   const cleanKey = apiKey?.trim();
+//   if (!cleanKey || cleanKey.length < 20) throw new Error("API key required for getClient");
+//   if (clientCache[cleanKey]) return clientCache[cleanKey];
+//   clientCache[cleanKey] = new GoogleGenerativeAI(cleanKey);
+//   return clientCache[cleanKey];
+// }
+
+// /* ---------- Model output extraction & JSON parsing ---------- */
+// function extractGeneratedText(result: any): string | null {
+//   try {
+//     if (!result) return null;
+//     if (result?.response && typeof result.response.text === "function") {
+//       const t = result.response.text(); if (t && String(t).trim()) return String(t).trim();
+//     }
+//     if (Array.isArray(result?.candidates) && result.candidates.length > 0) {
+//       const cand = result.candidates[0];
+//       if (typeof cand === "string" && cand.trim()) return cand.trim();
+//       if (cand?.content) {
+//         const c = cand.content?.text ?? cand.content;
+//         if (c && String(c).trim()) return String(c).trim();
+//       }
+//     }
+//     if (result?.output_text && String(result.output_text).trim()) return String(result.output_text).trim();
+//     const maybe = result?.text ?? result?.content ?? null;
+//     if (maybe && typeof maybe === "string" && maybe.trim()) return maybe.trim();
+//   } catch (e) {
+//     console.warn("extractGeneratedText error:", e);
+//   }
+//   return null;
+// }
+// function parseModelJson(text: string): { title?: string; html?: string } | null {
+//   try {
+//     const cleaned = text.trim().replace(/^```json\s*|\s*```$/g, "");
+//     const obj = JSON.parse(cleaned);
+//     if (obj && typeof obj === "object") return obj as any;
+//   } catch {}
+//   return null;
+// }
+// function clampTitleLen(t: string): string {
+//   const s = (t || "").trim().replace(/\s+/g, " ");
+//   if (s.length < 60) return (s + " ").repeat(1).slice(0, Math.max(60, s.length)).trim();
+//   if (s.length > 70) return s.slice(0, 70).replace(/\s+\S*$/, "").trim();
+//   return s;
+// }
+// function escapeHtml(s: string) {
+//   return String(s)
+//     .replaceAll("&", "&amp;")
+//     .replaceAll("<", "&lt;")
+//     .replaceAll(">", "&gt;")
+//     .replaceAll('"', "&quot;");
+// }
+// function buildAnchoredKeywordHTML(keyword: string, url?: string | null): string {
+//   const safeKw = escapeHtml(keyword);
+//   if (url) {
+//     const safeUrl = escapeHtml(url);
+//     return `<a href="${safeUrl}" target="_blank" rel="nofollow noopener"><strong>${safeKw}</strong></a>`;
+//   }
+//   return `<strong>${safeKw}</strong>`;
+// }
+// function enforceSingleAnchoredKeyword(html: string, keyword: string, url?: string | null): string {
+//   const token = `[ANCHOR:${keyword}]`;
+//   let out = html || "";
+//   const anchorHTML = buildAnchoredKeywordHTML(keyword, url);
+
+//   if (out.includes(token)) {
+//     out = out.replace(token, anchorHTML);
+//   } else {
+//     if (out.includes("</p>")) out = out.replace("</p>", ` ${anchorHTML}</p>`);
+//     else if (out.includes("<h2")) out = out.replace("<h2", `${anchorHTML}<h2`);
+//     else out = `${anchorHTML} ${out}`;
+//   }
+//   return out;
+// }
+
+// /* ---------- openContentEditor ---------- */
+// export function openContentEditor(item: ContentItem) {
+//   try {
+//     try {
+//       sessionStorage.setItem(SESSION_KEY, JSON.stringify(item));
+//     } catch (e) {
+//       console.warn("sessionStorage write failed for openContentEditor", e);
+//       try { localStorage.setItem(`${SESSION_KEY}_fallback`, JSON.stringify(item)); } catch {}
+//     }
+//     const win = window.open("/content/editor", "_blank");
+//     if (!win) toast.error("Popup blocked — allow popups to open the editor in a new tab.");
+//   } catch (e) {
+//     console.error("openContentEditor error:", e);
+//     try { window.location.href = "/content/editor"; } catch {}
+//   }
+// }
+
+// /* ---------- Hook Implementation ---------- */
+// export function useContentGeneration(passedApiKey?: string) {
+//   const [isProcessing, setIsProcessing] = useState(false);
+//   const [contentItems, setContentItems] = useLocalStorage<ContentItem[]>("content-items", []);
+//   const [excelProjects, setExcelProjects] = useLocalStorage<ExcelProject[]>("excel-projects", []);
+
+//   function resolveApiKey(): string {
+//     if (passedApiKey && passedApiKey.trim()) return passedApiKey.trim();
+//     try {
+//       // eslint-disable-next-line @typescript-eslint/no-explicit-any
+//       const meta = (typeof import.meta !== "undefined" ? (import.meta as any) : undefined);
+//       if (meta?.env?.VITE_GEMINI_API_KEY) return String(meta.env.VITE_GEMINI_API_KEY).trim();
+//     } catch {}
+//     return "";
+//   }
+
+//   const generateContentForKeyword = async (keyword: string, apiKey: string): Promise<{ title: string; html: string }> => {
+//     if (!apiKey) throw new Error("Gemini API key not set.");
+//     const client = getClient(apiKey);
+//     let lastError: unknown;
+
+//     for (const modelName of MODELS) {
+//       try {
+//         const model = (client as any).getGenerativeModel({ model: modelName as string });
+//         const prompt = buildPrompt(keyword);
+//         const result = await model.generateContent(prompt);
+//         const text = extractGeneratedText(result);
+//         if (!text) throw new Error("Model returned no text");
+
+//         const obj = parseModelJson(text);
+//         if (obj?.html) {
+//           const rawTitle = obj.title ? String(obj.title) : keyword;
+//           const finalTitle = clampTitleLen(rawTitle);
+//           return { title: finalTitle, html: String(obj.html) };
+//         }
+
+//         // soft fallback if the model returned plain text
+//         const lines = text.split(/\r?\n/);
+//         const first = lines[0]?.replace(/^["']|["']$/g, "") || keyword;
+//         const body = lines.slice(1).join("\n") || `<p>${escapeHtml(keyword)}</p>`;
+//         return { title: clampTitleLen(first), html: body };
+//       } catch (e) {
+//         lastError = e;
+//         const errMsg = (e as Error)?.message ?? String(e);
+//         const lowered = errMsg.toLowerCase();
+//         if (lowered.includes("tunnel") || lowered.includes("proxy") || lowered.includes("failed to fetch")) {
+//           toast.error("Network error communicating with Gemini. Check network and try again.");
+//         }
+//         if (lowered.includes("429") || lowered.includes("rate")) await sleep(800);
+//       }
+//     }
+//     throw lastError ?? new Error("All models failed");
+//   };
+
+//   const ensureProject = (proj: ExcelProject) => {
+//     setExcelProjects((prev = []) => {
+//       const exists = prev.some((p) => p.id === proj.id);
+//       if (exists) return prev.map((p) => (p.id === proj.id ? { ...p, ...proj } : p));
+//       return [...prev, proj];
+//     });
+//   };
+
+//   /**
+//    * generateContent(file, fileId, onProgress)
+//    * - extracts keywords + urls
+//    * - generates content (JSON → title + html), stores with single linked keyword
+//    */
+//   const generateContent = async (file: File, fileId: string, onProgress?: GenerateProgressCallback) => {
+//     setIsProcessing(true);
+//     onProgress?.(0);
+//     const API_KEY = resolveApiKey();
+//     console.info("generateContent start:", file.name, fileId, "apiKeyPresent?", !!API_KEY);
+
+//     ensureProject({
+//       id: fileId,
+//       fileName: file.name,
+//       status: "pending",
+//       totalKeywords: 0,
+//       processedKeywords: 0,
+//       createdAt: new Date().toISOString(),
+//     });
+
+//     const contentBuffer: ContentItem[] = [];
+//     let flushTimer: number | null = null;
+//     const FLUSH_COUNT = 10;
+//     const FLUSH_MS = 400;
+
+//     const scheduleFlush = () => {
+//       if (flushTimer != null) return;
+//       // @ts-ignore
+//       flushTimer = window.setTimeout(() => { flushNow(); }, FLUSH_MS);
+//     };
+//     const flushNow = () => {
+//       if (flushTimer != null) { clearTimeout(flushTimer as any); flushTimer = null; }
+//       if (contentBuffer.length === 0) return;
+//       const toWrite = contentBuffer.splice(0, contentBuffer.length);
+//       setContentItems((prev) => [...(prev ?? []), ...toWrite]);
+//     };
+
+//     // progress throttle
+//     let lastProgress = -1;
+//     let lastProgressTs = 0;
+//     const PROGRESS_MIN_DIFF = 1;
+//     const PROGRESS_MIN_MS = 300;
+//     const throttleProgress = (processed: number, total: number) => {
+//       const now = Date.now();
+//       const pct = Math.round((processed / Math.max(1, total)) * 100);
+//       if (pct === lastProgress && now - lastProgressTs < PROGRESS_MIN_MS) return;
+//       if (Math.abs(pct - lastProgress) < PROGRESS_MIN_DIFF && now - lastProgressTs < PROGRESS_MIN_MS) return;
+//       lastProgress = pct; lastProgressTs = now;
+//       setExcelProjects((prev) => (prev ?? []).map((p) => (p.id === fileId ? { ...p, processedKeywords: processed } : p)));
+//       try { onProgress?.(pct); } catch {}
+//     };
+
+//     try {
+//       const buffer = await file.arrayBuffer();
+//       console.debug("Read file bytes:", buffer.byteLength);
+
+//       const { keywords, perSheet } = extractKeywordsFromWorkbookBufferWithUrls(buffer);
+//       console.info("Extracted keywords:", keywords.length, perSheet);
+
+//       if (!keywords || keywords.length === 0) {
+//         ensureProject({
+//           id: fileId,
+//           fileName: file.name,
+//           status: "error",
+//           totalKeywords: 0,
+//           processedKeywords: 0,
+//           createdAt: new Date().toISOString(),
+//           error: "No valid keywords found in uploaded Excel file",
+//         });
+//         toast.error("No valid keywords found in the uploaded Excel file.");
+//         onProgress?.(100);
+//         return;
+//       }
+
+//       const project: ExcelProject = {
+//         id: fileId,
+//         fileName: file.name,
+//         status: "processing",
+//         totalKeywords: keywords.length,
+//         processedKeywords: 0,
+//         createdAt: new Date().toISOString(),
+//       };
+//       ensureProject(project);
+//       toast.info(`Found ${keywords.length} keywords. Starting generation...`);
+
+//       // Adaptive concurrency
+//       let concurrency = Math.min(6, Math.max(1, Math.floor(navigator.hardwareConcurrency ? navigator.hardwareConcurrency / 2 : 2)));
+//       const MIN_CONCURRENCY = 1;
+//       const MAX_CONCURRENCY = 8;
+//       let consecutiveNetworkErrors = 0;
+//       let processedCount = 0;
+//       let index = 0;
+
+//       // Now returns {title, html}
+//       const generateWithRetries = async (keyword: string): Promise<{ title: string; html: string } | null> => {
+//         let attempt = 0;
+//         const MAX_ATTEMPTS = 3;
+//         let backoff = 600;
+//         while (attempt < MAX_ATTEMPTS) {
+//           attempt++;
+//           try {
+//             const obj = await generateContentForKeyword(keyword, API_KEY);
+//             if (obj?.html && obj?.title) return obj;
+//             throw new Error("Empty response");
+//           } catch (err) {
+//             console.error(`[generateWithRetries] attempt ${attempt} failed for "${keyword}":`, err);
+//             const msg = (err as Error)?.message?.toLowerCase() ?? "";
+//             const isNetwork = msg.includes("tunnel") || msg.includes("proxy") || msg.includes("failed to fetch") || msg.includes("network");
+//             if (isNetwork) {
+//               consecutiveNetworkErrors++;
+//               concurrency = Math.max(MIN_CONCURRENCY, Math.floor(concurrency / 2));
+//               toast.warning("Network hiccup detected — reducing concurrency to " + concurrency);
+//             }
+//             if (attempt < MAX_ATTEMPTS) { await sleep(backoff); backoff *= 2; continue; }
+
+//             // final fallback: tiny HTML with anchor marker + heuristic title
+//             try {
+//               const fallbackTitle = clampTitleLen(`${keyword} — practical notes that actually help`);
+//               const fallbackHtml =`You are a seasoned British editor who actually does this work. Write like a person: specific, a bit idiosyncratic, sometimes blunt, never salesy. Prioritise clarity, lived detail, and practical judgement over polish. Do not mention prompts, AI, rules, or your process.
+
+// // // Inputs
+
+// // // TOPIC: ${keyword}
+
+// // // DOMAIN FOCUS (stay strictly on this): {{domain_focus}}
+// // // Main keyword is ${keyword}.
+
+// // // Title must be 60 to 70 characters long.
+
+// // // MAIN IDEA WORDS (use sparingly; prefer synonyms): ${keyword}
+
+// // // AUDIENCE: People who already care and want practical, hands-on guidance.
+
+// // // STYLE (tone guide only): human  
+
+// // // What to produce
+
+// // // A complete article that feels brutally human: empathetic, frank, grounded in real practice. Use British English.
+
+// // // Start with a quick, vivid micro-scene tied to (≤40 words). No greetings.
+
+// // // Then state why this matters now and your core stance in plain words.
+
+// // // Create 5–7 short, clear section headings. Make section lengths uneven (roughly 80–140 words each; some shorter, one longer).
+
+// // // Mix sentence lengths. Use plenty of short lines for punch. Allow one natural-sounding imperfection (an aside or informal run-on) if it helps voice.
+
+// // // Work in concrete, checkable specifics that practitioners recognise: measurements, tolerances, timings, file sizes, tool names, materials, costs, noise levels, etc. Include at least four tiny numbers/units (e.g., “±0.3 mm”, “190–220 gsm”, “20-minute cure”, “~500 KB”).
+
+// // // Include one small anecdote (1–3 sentences) and one counter-intuitive tip that actually helps.
+
+// // // Add exactly one internal-link anchor placeholder somewhere natural: [anchor text] (no URL).
+
+// // // If {{brand_name}} is provided, mention it once in the final section only, first-person plural (“we provide …”), and nowhere else.
+
+// // // Keep ${keyword} usage sparse and natural; bold a target keyword only when it truly fits the sentence, not every section.
+
+// // // Use a numbered list only for sequential steps or numeric checks; otherwise write in paragraphs.
+
+// // // Bans & guardrails
+
+// // // Stay strictly on topic: {{domain_focus}}. Do not drift into unrelated products, medical devices, or generic tech.
+
+// // // Avoid these phrases anywhere: “In conclusion,” “To summarise,” “Moreover,” “Furthermore,” “At the end of the day,” “look no further,” “tailor,” “dive,” “delve,” “step into,” “seamless experience.”
+
+// // // No meta-commentary about writing, AI, or detectors. No filler clichés.
+
+// // // Don’t over-explain basics the audience already knows; show advanced judgement instead.
+
+// // // Quality bar (do silently before returning)
+
+// // // British spelling; tone is candid, practical, and lived-in.
+
+// // // Sections are uneven; cadence varies; plenty of short sentences.
+
+// // // one short title 
+
+// // // tone like an 15 - 20 year old kid 
+
+// // // the content must be not look like ai  
+
+// // // please add human touch in content the human touch is aur priorty please generate human like words uses in daily  life simple words .
+
+// // // ≥4 concrete micro-details with real numbers/units.
+
+// // // [anchor text] ${keyword} appears once. Brand appears once (if provided) only in the final section.
+
+// // // IMPORTANT (for editor linking): Include **exactly one** machine-visible anchor marker in the HTML/text where you want the keyword hyperlinked. Use this exact token: [ANCHOR:${keyword}] (including square brackets) placed immediately before the target phrase or replacing the phrase. Example: "We recommend [ANCHOR:FDA registered hearing aids] for...". Make sure the literal text '[ANCHOR:${keyword}]' appears once in the response.
+
+
+// // // No topic drift; no banned phrases; no meta.`
+//               return { title: fallbackTitle, html: fallbackHtml };
+//             } catch {
+//               /* ignore */
+//             }
+//             return null;
+//           }
+//         }
+//         return null;
+//       };
+
+//       // Worker loop
+//       const running = new Set<Promise<void>>();
+//       const startNext = () => {
+//         if (index >= keywords.length) return;
+//         const kr = keywords[index++];
+//         const kw = kr.keyword;
+//         const url = kr.url ?? null;
+//         const curIndex = index;
+
+//         const task = (async () => {
+//           try {
+//             const generated = await generateWithRetries(kw);
+//             if (generated) {
+//               // single, hyperlinked keyword in HTML
+//               const linkedHtml = enforceSingleAnchoredKeyword(generated.html, kw, url);
+
+//               const contentItem: ContentItem = {
+//                 id: `${fileId}-${curIndex}-${Date.now()}`,
+//                 keyword: kw,
+//                 generatedContent: linkedHtml,
+//                 fileId,
+//                 fileName: file.name,
+//                 createdAt: new Date().toISOString(),
+//                 targetUrl: url,
+//                 title: generated.title, // Gemini-made title (60–70)
+//               };
+//               contentBuffer.push(contentItem);
+//               if (contentBuffer.length >= FLUSH_COUNT) flushNow(); else scheduleFlush();
+//             } else {
+//               console.warn("generation returned null for keyword:", kw);
+//             }
+//           } catch (e) {
+//             console.error("Unexpected generate error:", e);
+//           } finally {
+//             processedCount++;
+//             throttleProgress(processedCount, keywords.length);
+//             // adapt concurrency
+//             if (consecutiveNetworkErrors === 0 && concurrency < MAX_CONCURRENCY) {
+//               concurrency = Math.min(MAX_CONCURRENCY, concurrency + 0.2);
+//             } else if (consecutiveNetworkErrors >= 3) {
+//               concurrency = Math.max(MIN_CONCURRENCY, Math.floor(concurrency / 2));
+//               consecutiveNetworkErrors = 0;
+//             }
+//           }
+//         })().finally(() => running.delete(task));
+//         running.add(task);
+//       };
+
+//       while (index < keywords.length || running.size > 0) {
+//         const curConcurrency = Math.max(MIN_CONCURRENCY, Math.min(MAX_CONCURRENCY, Math.floor(concurrency)));
+//         while (running.size < curConcurrency && index < keywords.length) startNext();
+//         if (running.size === 0 && index >= keywords.length) break;
+//         // @ts-ignore
+//         await Promise.race(Array.from(running));
+//       }
+
+//       flushNow();
+//       setExcelProjects((prev) => (prev ?? []).map((p) => (p.id === fileId ? { ...p, status: "completed", processedKeywords: keywords.length } : p)));
+//       toast.success(`Finished processing ${file.name}. Generated content for ~${keywords.length} keywords.`);
+//       onProgress?.(100);
+//     } catch (error) {
+//       console.error("generateContent overall error:", error);
+//       setExcelProjects((prev) => (prev ?? []).map((p) => (p.id === fileId ? { ...p, status: "error", error: error instanceof Error ? error.message : String(error) } : p)));
+//       toast.error(`Failed processing ${file.name}: ${error instanceof Error ? error.message : String(error)}`);
+//       onProgress?.(100);
+//       throw error;
+//     } finally {
+//       flushNow();
+//       setIsProcessing(false);
+//     }
+//   };
+
+//   const deleteProject = (projectId: string) => {
+//     setExcelProjects((prev) => (prev ?? []).filter((p) => p.id !== projectId));
+//     setContentItems((prev) => (prev ?? []).filter((c) => c.fileId !== projectId));
+//     toast.success("Project deleted");
+//   };
+
+//   const deleteAllProjects = () => {
+//     setExcelProjects([]);
+//     setContentItems([]);
+//     toast.success("All projects cleared");
+//   };
+
+//   return {
+//     generateContent,
+//     isProcessing,
+//     contentItems,
+//     setContentItems,
+//     excelProjects,
+//     setExcelProjects,
+//     deleteProject,
+//     deleteAllProjects,
+//     openContentEditor,
+//   };
+// }
+
 // src/hooks/use-content-generation.ts
 import { useState } from "react";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { toast } from "sonner";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import * as XLSX from "xlsx";
+import { generateJSONTitleHtml } from "@/lib/llm/api";
+import { useContentPreferences } from "@/hooks/use-preferences";
 
-/**
- * useContentGeneration
- * - JSON-based output (title + html)
- * - Title (60–70 chars) from Gemini (not the keyword)
- * - Exactly one keyword occurrence, hyperlinked with Excel URL
- * - Structured article with Conclusion
- * - Robust Excel parsing (optional URL from same row)
- * - Editor launcher
- */
-
-/* ---------- Types ---------- */
+/* ────────────────────────────────────────────────────────────────────────────
+   Types
+──────────────────────────────────────────────────────────────────────────── */
 export interface ContentItem {
   id: string;
-  keyword: string;
-  generatedContent: string; // HTML
+  keyword: string;                 // primary keyword (first of the group)
+  keywordsUsed?: string[];         // all keywords used for this item (1/2/4)
+  generatedContent: string;        // HTML
   fileId: string;
   fileName: string;
-  createdAt: string; // ISO
+  createdAt: string;               // ISO
   title?: string;
-  targetUrl?: string | null; // hyperlink destination for the (single) keyword
+  targetUrl?: string | null;       // url for primary
+  urlMap?: Record<string, string | null>; // per keyword -> url|null
+  status?: "success" | "failed";
 }
 
 interface ExcelProject {
   id: string;
   fileName: string;
   status: "pending" | "processing" | "completed" | "error";
-  totalKeywords: number;
-  processedKeywords: number;
+  totalKeywords: number;           // total rows read
+  processedKeywords: number;       // rows attempted (not groups)
   createdAt: string;
   error?: string;
+  failedCount?: number;
 }
 
 type GenerateProgressCallback = (progressPercentage: number) => void;
 
-/* ---------- Constants ---------- */
-const SESSION_KEY = "open-content-item_v1";
-const MODELS = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro"] as const;
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-/* ---------- Prompt (returns STRICT JSON) ---------- */
-const buildPrompt = (keyword: string) => `
-You are a seasoned British editor. Natural, specific, not salesy. British spelling.
-
-TASK
-Return STRICT JSON only (no prose) with exactly this shape:
-{
-  "title": "<60-70 characters headline>",
-  "html": "<well-structured HTML article>"
+/* ────────────────────────────────────────────────────────────────────────────
+   Global verbose switch (for debugging). Enable: window.__contentVerbose = true
+──────────────────────────────────────────────────────────────────────────── */
+declare global {
+  interface Window {
+    __contentVerbose?: boolean;
+  }
 }
+const V = () =>
+  typeof window !== "undefined" && (window as any).__contentVerbose === true;
 
-CONSTRAINTS
-- "title": 60–70 characters. No quotes inside the title text itself.
-- "html":
-  - Start with a short vivid micro-scene (≤40 words).
-  - Then a one-paragraph “why this matters”.
-  - Then 5–7 uneven sections using <h2> and <h3>.
-  - Include ≥4 concrete micro-details with real numbers/units (e.g., “±0.3 mm”, “190–220 gsm”, “20-minute cure”, “~500 KB”).
-  - Include one small anecdote (1–3 sentences).
-  - Include one counter-intuitive, useful tip.
-  - End with a <h2>Conclusion</h2> section (do NOT start it with “In conclusion,”).
-- Use British English and a clear, human tone (15–20yo vibe but practical).
-- Keep ${keyword} usage sparse and natural.
-- IMPORTANT: Include **exactly one** marker for link placement: [ANCHOR:${keyword}] at the spot where the single visible keyword should appear. Do not use the keyword anywhere else in the text. The marker stands for the only occurrence we will hyperlink.
-- No meta talk about prompts/AI or banned clichés (“look no further”, “step into”, etc.).
-- Output JSON ONLY. No markdown fences.
-
-INPUT
-keyword: ${keyword}
-domain_focus: {{domain_focus}}
-brand_name: {{brand_name}}
-`;
-
-/* ---------- Excel parsing helpers (with URL detection) ---------- */
+/* ────────────────────────────────────────────────────────────────────────────
+   Excel parsing helpers
+──────────────────────────────────────────────────────────────────────────── */
 function isLikelyUrlOrDomain(s: string | undefined | null) {
   if (!s) return false;
-  const trimmed = String(s).trim();
-  if (!trimmed) return false;
-  if (/^https?:\/\//i.test(trimmed)) return true;
-  if (/^www\./i.test(trimmed)) return true;
-  if (/^[a-z0-9\-]+(\.[a-z0-9\-]+)+$/i.test(trimmed) && !/\s/.test(trimmed)) return true;
+  const t = String(s).trim();
+  if (!t) return false;
+  if (/^https?:\/\//i.test(t)) return true;
+  if (/^www\./i.test(t)) return true;
+  if (/^[a-z0-9\-]+(\.[a-z0-9\-]+)+$/i.test(t) && !/\s/.test(t)) return true;
   return false;
 }
+
 function sanitizeKeyword(raw: unknown): string {
   if (raw == null) return "";
   let v = String(raw).replace(/\u00A0/g, " ").trim();
   if (!v) return "";
-  v = v.replace(/^\(?\s*\d+[\.\):-]?\s*/u, "").trim();
-  v = v.replace(/^[\u2022\-\*]\s*/, "").trim();
-  if (/^[\d\.,\s]+$/.test(v)) return "";
+  v = v.replace(/^\(?\s*\d+[\.\):-]?\s*/u, "").trim(); // leading numbers
+  v = v.replace(/^[\u2022\-\*]\s*/, "").trim();        // bullet dots
+  if (/^[\d\.,\s]+$/.test(v)) return "";               // numeric only
   if (v.length > 180) return "";
   if (isLikelyUrlOrDomain(v)) return "";
   if ((v.match(/[A-Za-z\u00C0-\u024F]/g) || []).length < 2) return "";
@@ -3857,110 +4516,54 @@ function sanitizeKeyword(raw: unknown): string {
   if (v.length < 2) return "";
   return v;
 }
-function pickKeywordColumn(rows: unknown[][]): number | null {
-  if (!rows || rows.length === 0) return null;
-  const headerCandidates = rows.slice(0, 5);
-  let headerRowIndex = -1;
-  for (let i = 0; i < headerCandidates.length; i++) {
-    const r = headerCandidates[i];
-    if (!Array.isArray(r)) continue;
-    const nonEmpty = r.some((c) => typeof c === "string" && String(c).trim().length > 0);
-    if (nonEmpty) { headerRowIndex = i; break; }
-  }
-  const headerRow = headerRowIndex >= 0 && Array.isArray(rows[headerRowIndex]) ? (rows[headerRowIndex] as unknown[]) : [];
-  const headerNames = headerRow.map((c) => String(c ?? "").trim().toLowerCase());
-  const preferred = ["keyword", "keywords", "topic", "title", "query", "search term", "focus keyword", "term", "phrase"];
-  for (let i = 0; i < headerNames.length; i++) if (preferred.includes(headerNames[i])) return i;
-
-  const lookahead = rows.slice(Math.max(0, headerRowIndex + 1), Math.min(rows.length, (headerRowIndex + 1) + 200));
-  const maxCols = Math.max(...rows.map((r) => (Array.isArray(r) ? r.length : 0)), 0);
-  let bestCol = -1, bestScore = 0;
-  for (let col = 0; col < maxCols; col++) {
-    let score = 0, total = 0;
-    for (const r of lookahead) {
-      const cell = Array.isArray(r) ? r[col] : undefined;
-      const s = sanitizeKeyword(cell);
-      if (s) score++;
-      if (cell !== undefined && cell !== null && String(cell).trim() !== "") total++;
-    }
-    if (total === 0) continue;
-    const weighted = score * 100 + Math.min(total, 100);
-    if (weighted > bestScore) { bestScore = weighted; bestCol = col; }
-  }
-  if (bestCol >= 0) {
-    let validCount = 0;
-    for (const r of rows.slice(1, 201)) {
-      const cell = Array.isArray(r) ? r[bestCol] : undefined;
-      if (sanitizeKeyword(cell)) validCount++;
-      if (validCount >= 2) break;
-    }
-    if (validCount >= 2) return bestCol;
-  }
-  return null;
-}
 
 type KeywordRow = { keyword: string; url?: string | null };
 
 function extractKeywordsFromWorksheetWithUrls(worksheet: XLSX.WorkSheet): KeywordRow[] {
   const rows = XLSX.utils.sheet_to_json<unknown[]>(worksheet, { header: 1, raw: true }) as unknown[][];
-  if (!rows || rows.length === 0) return [];
-  const col = pickKeywordColumn(rows);
-  if (col == null) return [];
+  if (!rows?.length) return [];
+
+  const maxCols = Math.max(...rows.map(r => Array.isArray(r) ? r.length : 0), 0);
   const dataRows = rows.slice(1);
-  const found: KeywordRow[] = [];
+  const out: KeywordRow[] = [];
   const seen = new Set<string>();
-  const maxCols = Math.max(...rows.map((r) => (Array.isArray(r) ? r.length : 0)), 0);
 
   for (const r of dataRows) {
     if (!Array.isArray(r)) continue;
-    const raw = r[col];
-    const k = sanitizeKeyword(raw);
-    if (!k || seen.has(k)) continue;
 
-    let url: string | undefined;
-    for (let offset = -3; offset <= 3; offset++) {
-      if (offset === 0) continue;
-      const idx = col + offset;
-      if (idx < 0 || idx >= maxCols) continue;
-      const other = r[idx];
-      if (!other) continue;
-      const s = String(other).trim();
-      if (isLikelyUrlOrDomain(s)) {
-        url = s;
-        if (!/^https?:\/\//i.test(url)) url = "https://" + url;
-        break;
-      }
-    }
-    if (!url) {
-      for (let c = 0; c < maxCols; c++) {
-        if (c === col) continue;
-        const other = r[c];
-        if (!other) continue;
-        const s = String(other).trim();
+    // choose first sensible text cell as keyword
+    let picked: string | null = null;
+    let url: string | null = null;
+
+    for (let c = 0; c < maxCols; c++) {
+      const k = sanitizeKeyword(r[c]);
+      if (!k || seen.has(k)) continue;
+
+      // try near-by cells for URL
+      for (let offset = -3; offset <= 3; offset++) {
+        if (offset === 0) continue;
+        const idx = c + offset;
+        if (idx < 0 || idx >= maxCols) continue;
+        const maybe = r[idx];
+        if (!maybe) continue;
+        const s = String(maybe).trim();
         if (isLikelyUrlOrDomain(s)) {
-          url = s;
-          if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+          url = /^https?:\/\//i.test(s) ? s : "https://" + s;
           break;
         }
       }
+      picked = k;
+      break;
     }
-    found.push({ keyword: k, url: url ?? null });
-    seen.add(k);
-  }
 
-  if (found.length === 0) {
-    for (let rIdx = 1; rIdx < rows.length; rIdx++) {
-      const r = rows[rIdx];
-      if (!Array.isArray(r)) continue;
-      for (let c = 0; c < maxCols; c++) {
-        const k = sanitizeKeyword(r[c]);
-        if (k && !seen.has(k)) { found.push({ keyword: k, url: null }); seen.add(k); }
-      }
-      if (found.length > 0) break;
+    if (picked && !seen.has(picked)) {
+      out.push({ keyword: picked, url });
+      seen.add(picked);
     }
   }
-  return found;
+  return out;
 }
+
 function extractKeywordsFromWorkbookBufferWithUrls(buffer: ArrayBuffer | Uint8Array) {
   const workbook = XLSX.read(buffer, { type: "array" });
   const sheetNames = workbook.SheetNames ?? [];
@@ -3971,66 +4574,43 @@ function extractKeywordsFromWorkbookBufferWithUrls(buffer: ArrayBuffer | Uint8Ar
   for (const sheetName of sheetNames) {
     try {
       const sheet = workbook.Sheets[sheetName];
-      const sheetKeywords = extractKeywordsFromWorksheetWithUrls(sheet);
-      perSheet[sheetName] = sheetKeywords.length;
-      for (const k of sheetKeywords) {
-        if (!seen.has(k.keyword)) { seen.add(k.keyword); combined.push(k); }
+      const ks = extractKeywordsFromWorksheetWithUrls(sheet);
+      perSheet[sheetName] = ks.length;
+      for (const k of ks) {
+        if (!seen.has(k.keyword)) {
+          seen.add(k.keyword);
+          combined.push(k);
+        }
       }
-      if (combined.length > 2000) break;
+      if (combined.length > 4000) break;
     } catch (e) {
-      console.warn("worksheet parse failed:", sheetName, e);
+      console.warn("sheet parse fail:", sheetName, e);
     }
   }
+  if (V()) console.log("[CONTENT] extracted keywords:", combined.length, perSheet);
   return { keywords: combined, perSheet };
 }
 
-/* ---------- Client reuse ---------- */
-const clientCache: Record<string, any> = {};
-function getClient(apiKey: string) {
-  const cleanKey = apiKey?.trim();
-  if (!cleanKey || cleanKey.length < 20) throw new Error("API key required for getClient");
-  if (clientCache[cleanKey]) return clientCache[cleanKey];
-  clientCache[cleanKey] = new GoogleGenerativeAI(cleanKey);
-  return clientCache[cleanKey];
+/* ────────────────────────────────────────────────────────────────────────────
+   Keyword-grouping helpers
+──────────────────────────────────────────────────────────────────────────── */
+function resolveGroupSize(input: any): 1 | 2 | 4 {
+  if (typeof input === "number") return input === 4 ? 4 : input === 2 ? 2 : 1;
+  const raw = (input && typeof input === "object") ? input.keywordMode : input;
+
+  if (typeof raw === "number") return raw === 4 ? 4 : raw === 2 ? 2 : 1;
+  if (typeof raw === "string") {
+    const s = raw.trim().toLowerCase();
+    if (/\b4\b|four|4keyword|4-?keywords/.test(s)) return 4;
+    if (/\b2\b|two|2keyword|2-?keywords/.test(s)) return 2;
+    if (/\b1\b|one|single|1-?keyword/.test(s)) return 1;
+  }
+  return 1;
 }
 
-/* ---------- Model output extraction & JSON parsing ---------- */
-function extractGeneratedText(result: any): string | null {
-  try {
-    if (!result) return null;
-    if (result?.response && typeof result.response.text === "function") {
-      const t = result.response.text(); if (t && String(t).trim()) return String(t).trim();
-    }
-    if (Array.isArray(result?.candidates) && result.candidates.length > 0) {
-      const cand = result.candidates[0];
-      if (typeof cand === "string" && cand.trim()) return cand.trim();
-      if (cand?.content) {
-        const c = cand.content?.text ?? cand.content;
-        if (c && String(c).trim()) return String(c).trim();
-      }
-    }
-    if (result?.output_text && String(result.output_text).trim()) return String(result.output_text).trim();
-    const maybe = result?.text ?? result?.content ?? null;
-    if (maybe && typeof maybe === "string" && maybe.trim()) return maybe.trim();
-  } catch (e) {
-    console.warn("extractGeneratedText error:", e);
-  }
-  return null;
-}
-function parseModelJson(text: string): { title?: string; html?: string } | null {
-  try {
-    const cleaned = text.trim().replace(/^```json\s*|\s*```$/g, "");
-    const obj = JSON.parse(cleaned);
-    if (obj && typeof obj === "object") return obj as any;
-  } catch {}
-  return null;
-}
-function clampTitleLen(t: string): string {
-  const s = (t || "").trim().replace(/\s+/g, " ");
-  if (s.length < 60) return (s + " ").repeat(1).slice(0, Math.max(60, s.length)).trim();
-  if (s.length > 70) return s.slice(0, 70).replace(/\s+\S*$/, "").trim();
-  return s;
-}
+/* ────────────────────────────────────────────────────────────────────────────
+   Anchor/link helpers
+──────────────────────────────────────────────────────────────────────────── */
 function escapeHtml(s: string) {
   return String(s)
     .replaceAll("&", "&amp;")
@@ -4038,118 +4618,174 @@ function escapeHtml(s: string) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
 }
-function buildAnchoredKeywordHTML(keyword: string, url?: string | null): string {
-  const safeKw = escapeHtml(keyword);
+
+function buildAnchorHTML(keyword: string, url?: string | null) {
+  const kw = escapeHtml(keyword);
   if (url) {
-    const safeUrl = escapeHtml(url);
-    return `<a href="${safeUrl}" target="_blank" rel="nofollow noopener"><strong>${safeKw}</strong></a>`;
+    const u = escapeHtml(url);
+    return `<a href="${u}" target="_blank" rel="nofollow noopener"><strong>${kw}</strong></a>`;
   }
-  return `<strong>${safeKw}</strong>`;
+  return `<strong>${kw}</strong>`;
 }
-function enforceSingleAnchoredKeyword(html: string, keyword: string, url?: string | null): string {
-  const token = `[ANCHOR:${keyword}]`;
+
+// Try to inject anchor for a single keyword:
+// 1) Replace [ANCHOR:kw] token if present
+// 2) Else wrap first visible occurrence of the keyword (case-insensitive, word-boundary aware)
+// 3) Else inject at end of first paragraph (or prepend)
+function injectAnchorForKeyword(html: string, keyword: string, url?: string | null): string {
   let out = html || "";
-  const anchorHTML = buildAnchoredKeywordHTML(keyword, url);
+  const token = `[ANCHOR:${keyword}]`;
 
   if (out.includes(token)) {
-    out = out.replace(token, anchorHTML);
-  } else {
-    if (out.includes("</p>")) out = out.replace("</p>", ` ${anchorHTML}</p>`);
-    else if (out.includes("<h2")) out = out.replace("<h2", `${anchorHTML}<h2`);
-    else out = `${anchorHTML} ${out}`;
+    return out.replace(token, buildAnchorHTML(keyword, url));
+  }
+
+  // Try first visible occurrence
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const wordBoundary = /^\w[\w\s-]*\w$/.test(keyword);
+  const re = wordBoundary ? new RegExp(`\\b${escaped}\\b`, "i") : new RegExp(escaped, "i");
+
+  if (re.test(out)) {
+    return out.replace(re, buildAnchorHTML(keyword, url));
+  }
+
+  // Fallback inject into first paragraph
+  const anchor = buildAnchorHTML(keyword, url);
+  if (out.includes("</p>")) return out.replace("</p>", ` ${anchor}</p>`);
+  return `${anchor} ${out}`;
+}
+
+// Apply anchors for all keywords in the urlMap
+function applyAllAnchors(html: string, urlMap: Record<string, string | null>): string {
+  let out = html || "";
+  for (const k of Object.keys(urlMap)) {
+    out = injectAnchorForKeyword(out, k, urlMap[k]);
   }
   return out;
 }
 
-/* ---------- openContentEditor ---------- */
+/* ────────────────────────────────────────────────────────────────────────────
+   Word-count + title helpers (target 500–600 words, title 60–70 chars)
+──────────────────────────────────────────────────────────────────────────── */
+function htmlToPlainWords(html: string): number {
+  const text = String(html ?? "")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return 0;
+  return text.split(/\s+/).length;
+}
+
+function generateFillerParagraph(): string {
+  // ~110–150 words, neutral, practical, with tiny units/timings sprinkled
+  return `<p>When you put this into practice, a few small habits make a big difference. Keep a pocket checklist of measurable points — tolerances around ±0.3&nbsp;mm, file sizes near ~500&nbsp;KB for web images, curing or wait times of 15–20&nbsp;minutes, and simple budget caps in ₹500–₹1,200 per task. Note what consistently works over two weeks and drop anything that never moves the needle. Write down friction spots (slow pages, unclear labels, noisy environments at ~65–70&nbsp;dB) and fix the loudest first. Batch routine steps into 20–25&nbsp;minute blocks; stop once you hit diminishing returns. That cadence prevents over-tuning and keeps momentum. Finally, review outcomes every Friday: one paragraph on what improved, one on what didn’t, and one concrete tweak to try on Monday. It’s boring, yes — but it compounds fast.</p>`;
+}
+
+function ensureWordCountRange(html: string, min = 500): string {
+  let out = html || "";
+  let words = htmlToPlainWords(out);
+  if (words >= min) return out;
+  if (V()) console.log(`[CONTENT] padding from ~${words} → ≥${min} words`);
+
+  // add up to 3 filler paragraphs, re-check after each
+  for (let i = 0; i < 3 && words < min; i++) {
+    out += generateFillerParagraph();
+    words = htmlToPlainWords(out);
+  }
+  return out;
+}
+
+function clampTitleToRange(title: string, keywordsHint: string[] = [], min = 60, max = 70): string {
+  let s = (title || "").trim().replace(/\s+/g, " ");
+  if (!s) s = keywordsHint[0] || "Untitled";
+
+  if (s.length > max) {
+    s = s.slice(0, max).replace(/\s+\S*$/, "").trim();
+  }
+  if (s.length >= min) return s;
+
+  const suffixes = [
+    " — practical tips & checks",
+    " — hands-on guide",
+    " — essentials that actually help",
+    " — quick, field-tested guide",
+  ];
+
+  for (const suf of suffixes) {
+    if (s.length >= min) break;
+    const cap = max - s.length;
+    if (cap <= 3) break;
+    const seg = suf.slice(0, cap).replace(/\s+\S*$/, "").trim();
+    if (seg) s = s + seg;
+  }
+
+  if (s.length < min && keywordsHint.length) {
+    const extra = ` — ${keywordsHint.slice(0, 2).join(", ")}`;
+    const cap = max - s.length;
+    const seg = extra.slice(0, cap).replace(/\s+\S*$/, "").trim();
+    if (seg) s = s + seg;
+  }
+
+  // Final safety: if still below min, pad minimally within max
+  if (s.length < min) {
+    const pad = " — guide";
+    const cap = max - s.length;
+    s = s + pad.slice(0, Math.max(0, cap));
+  }
+  return s;
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+   Editor launcher
+──────────────────────────────────────────────────────────────────────────── */
+const SESSION_KEY = "open-content-item_v1";
+
 export function openContentEditor(item: ContentItem) {
   try {
     try {
       sessionStorage.setItem(SESSION_KEY, JSON.stringify(item));
-    } catch (e) {
-      console.warn("sessionStorage write failed for openContentEditor", e);
+    } catch {
       try { localStorage.setItem(`${SESSION_KEY}_fallback`, JSON.stringify(item)); } catch {}
     }
     const win = window.open("/content/editor", "_blank");
     if (!win) toast.error("Popup blocked — allow popups to open the editor in a new tab.");
-  } catch (e) {
-    console.error("openContentEditor error:", e);
+  } catch {
     try { window.location.href = "/content/editor"; } catch {}
   }
 }
 
-/* ---------- Hook Implementation ---------- */
-export function useContentGeneration(passedApiKey?: string) {
+/* ────────────────────────────────────────────────────────────────────────────
+   Hook Implementation
+──────────────────────────────────────────────────────────────────────────── */
+export function useContentGeneration() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [contentItems, setContentItems] = useLocalStorage<ContentItem[]>("content-items", []);
   const [excelProjects, setExcelProjects] = useLocalStorage<ExcelProject[]>("excel-projects", []);
+  const { prefs } = useContentPreferences();
 
-  function resolveApiKey(): string {
-    if (passedApiKey && passedApiKey.trim()) return passedApiKey.trim();
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const meta = (typeof import.meta !== "undefined" ? (import.meta as any) : undefined);
-      if (meta?.env?.VITE_GEMINI_API_KEY) return String(meta.env.VITE_GEMINI_API_KEY).trim();
-    } catch {}
-    return "";
-  }
-
-  const generateContentForKeyword = async (keyword: string, apiKey: string): Promise<{ title: string; html: string }> => {
-    if (!apiKey) throw new Error("Gemini API key not set.");
-    const client = getClient(apiKey);
-    let lastError: unknown;
-
-    for (const modelName of MODELS) {
-      try {
-        const model = (client as any).getGenerativeModel({ model: modelName as string });
-        const prompt = buildPrompt(keyword);
-        const result = await model.generateContent(prompt);
-        const text = extractGeneratedText(result);
-        if (!text) throw new Error("Model returned no text");
-
-        const obj = parseModelJson(text);
-        if (obj?.html) {
-          const rawTitle = obj.title ? String(obj.title) : keyword;
-          const finalTitle = clampTitleLen(rawTitle);
-          return { title: finalTitle, html: String(obj.html) };
-        }
-
-        // soft fallback if the model returned plain text
-        const lines = text.split(/\r?\n/);
-        const first = lines[0]?.replace(/^["']|["']$/g, "") || keyword;
-        const body = lines.slice(1).join("\n") || `<p>${escapeHtml(keyword)}</p>`;
-        return { title: clampTitleLen(first), html: body };
-      } catch (e) {
-        lastError = e;
-        const errMsg = (e as Error)?.message ?? String(e);
-        const lowered = errMsg.toLowerCase();
-        if (lowered.includes("tunnel") || lowered.includes("proxy") || lowered.includes("failed to fetch")) {
-          toast.error("Network error communicating with Gemini. Check network and try again.");
-        }
-        if (lowered.includes("429") || lowered.includes("rate")) await sleep(800);
-      }
-    }
-    throw lastError ?? new Error("All models failed");
-  };
-
-  const ensureProject = (proj: ExcelProject) => {
+  const ensureProject = (proj: Partial<ExcelProject> & { id: string; fileName: string }) => {
     setExcelProjects((prev = []) => {
       const exists = prev.some((p) => p.id === proj.id);
-      if (exists) return prev.map((p) => (p.id === proj.id ? { ...p, ...proj } : p));
-      return [...prev, proj];
+      const base: ExcelProject = {
+        id: proj.id,
+        fileName: proj.fileName,
+        status: (proj as any).status ?? "pending",
+        totalKeywords: (proj as any).totalKeywords ?? 0,
+        processedKeywords: (proj as any).processedKeywords ?? 0,
+        createdAt: (proj as any).createdAt ?? new Date().toISOString(),
+        error: (proj as any).error,
+        failedCount: (proj as any).failedCount ?? 0,
+      };
+      if (exists) return prev.map((p) => (p.id === proj.id ? { ...p, ...base } : p));
+      return [...prev, base];
     });
   };
 
-  /**
-   * generateContent(file, fileId, onProgress)
-   * - extracts keywords + urls
-   * - generates content (JSON → title + html), stores with single linked keyword
-   */
   const generateContent = async (file: File, fileId: string, onProgress?: GenerateProgressCallback) => {
     setIsProcessing(true);
     onProgress?.(0);
-    const API_KEY = resolveApiKey();
-    console.info("generateContent start:", file.name, fileId, "apiKeyPresent?", !!API_KEY);
 
     ensureProject({
       id: fileId,
@@ -4158,191 +4794,190 @@ export function useContentGeneration(passedApiKey?: string) {
       totalKeywords: 0,
       processedKeywords: 0,
       createdAt: new Date().toISOString(),
+      failedCount: 0,
     });
 
-    const contentBuffer: ContentItem[] = [];
-    let flushTimer: number | null = null;
-    const FLUSH_COUNT = 10;
-    const FLUSH_MS = 400;
-
-    const scheduleFlush = () => {
-      if (flushTimer != null) return;
-      // @ts-ignore
-      flushTimer = window.setTimeout(() => { flushNow(); }, FLUSH_MS);
-    };
+    const bufferItems: ContentItem[] = [];
+    let FLUSH_TIMER: number | null = null;
     const flushNow = () => {
-      if (flushTimer != null) { clearTimeout(flushTimer as any); flushTimer = null; }
-      if (contentBuffer.length === 0) return;
-      const toWrite = contentBuffer.splice(0, contentBuffer.length);
+      if (FLUSH_TIMER != null) { clearTimeout(FLUSH_TIMER as any); FLUSH_TIMER = null; }
+      if (bufferItems.length === 0) return;
+      const toWrite = bufferItems.splice(0, bufferItems.length);
       setContentItems((prev) => [...(prev ?? []), ...toWrite]);
     };
+    const scheduleFlush = () => {
+      if (FLUSH_TIMER != null) return;
+      // @ts-ignore
+      FLUSH_TIMER = window.setTimeout(() => flushNow(), 300);
+    };
 
-    // progress throttle
-    let lastProgress = -1;
-    let lastProgressTs = 0;
-    const PROGRESS_MIN_DIFF = 1;
-    const PROGRESS_MIN_MS = 300;
-    const throttleProgress = (processed: number, total: number) => {
-      const now = Date.now();
+    let failedCount = 0;
+
+    // progress updater (counts rows processed, not groups)
+    let processedCount = 0;
+    const updateProgress = (processed: number, total: number) => {
+      setExcelProjects((prev) => (prev ?? []).map((p) =>
+        p.id === fileId ? { ...p, processedKeywords: processed } : p
+      ));
       const pct = Math.round((processed / Math.max(1, total)) * 100);
-      if (pct === lastProgress && now - lastProgressTs < PROGRESS_MIN_MS) return;
-      if (Math.abs(pct - lastProgress) < PROGRESS_MIN_DIFF && now - lastProgressTs < PROGRESS_MIN_MS) return;
-      lastProgress = pct; lastProgressTs = now;
-      setExcelProjects((prev) => (prev ?? []).map((p) => (p.id === fileId ? { ...p, processedKeywords: processed } : p)));
       try { onProgress?.(pct); } catch {}
     };
 
     try {
       const buffer = await file.arrayBuffer();
-      console.debug("Read file bytes:", buffer.byteLength);
-
-      const { keywords, perSheet } = extractKeywordsFromWorkbookBufferWithUrls(buffer);
-      console.info("Extracted keywords:", keywords.length, perSheet);
-
-      if (!keywords || keywords.length === 0) {
+      const { keywords } = extractKeywordsFromWorkbookBufferWithUrls(buffer);
+      if (!keywords.length) {
         ensureProject({
           id: fileId,
           fileName: file.name,
           status: "error",
-          totalKeywords: 0,
-          processedKeywords: 0,
-          createdAt: new Date().toISOString(),
-          error: "No valid keywords found in uploaded Excel file",
+          error: "No valid keywords found in the uploaded Excel file",
         });
         toast.error("No valid keywords found in the uploaded Excel file.");
         onProgress?.(100);
         return;
       }
 
-      const project: ExcelProject = {
+      // Group rows by user preference: 1/2/4 keywords per article
+      const size = resolveGroupSize(prefs);
+      if (V()) console.log("[CONTENT] group size =", size, "raw =", (prefs as any)?.keywordMode);
+
+      const groups: KeywordRow[][] = [];
+      for (let i = 0; i < keywords.length; i += size) {
+        groups.push(keywords.slice(i, i + size));
+      }
+      if (V()) console.log("[CONTENT] total groups:", groups.length);
+
+      ensureProject({
         id: fileId,
         fileName: file.name,
         status: "processing",
         totalKeywords: keywords.length,
         processedKeywords: 0,
-        createdAt: new Date().toISOString(),
-      };
-      ensureProject(project);
-      toast.info(`Found ${keywords.length} keywords. Starting generation...`);
+      });
+      toast.info(`Found ${keywords.length} keywords → grouping by ${size}. Generating...`);
 
-      // Adaptive concurrency
-      let concurrency = Math.min(6, Math.max(1, Math.floor(navigator.hardwareConcurrency ? navigator.hardwareConcurrency / 2 : 2)));
-      const MIN_CONCURRENCY = 1;
-      const MAX_CONCURRENCY = 8;
-      let consecutiveNetworkErrors = 0;
-      let processedCount = 0;
-      let index = 0;
-
-      // Now returns {title, html}
-      const generateWithRetries = async (keyword: string): Promise<{ title: string; html: string } | null> => {
-        let attempt = 0;
-        const MAX_ATTEMPTS = 3;
-        let backoff = 600;
-        while (attempt < MAX_ATTEMPTS) {
-          attempt++;
-          try {
-            const obj = await generateContentForKeyword(keyword, API_KEY);
-            if (obj?.html && obj?.title) return obj;
-            throw new Error("Empty response");
-          } catch (err) {
-            console.error(`[generateWithRetries] attempt ${attempt} failed for "${keyword}":`, err);
-            const msg = (err as Error)?.message?.toLowerCase() ?? "";
-            const isNetwork = msg.includes("tunnel") || msg.includes("proxy") || msg.includes("failed to fetch") || msg.includes("network");
-            if (isNetwork) {
-              consecutiveNetworkErrors++;
-              concurrency = Math.max(MIN_CONCURRENCY, Math.floor(concurrency / 2));
-              toast.warning("Network hiccup detected — reducing concurrency to " + concurrency);
-            }
-            if (attempt < MAX_ATTEMPTS) { await sleep(backoff); backoff *= 2; continue; }
-
-            // final fallback: tiny HTML with anchor marker + heuristic title
-            try {
-              const fallbackTitle = clampTitleLen(`${keyword} — practical notes that actually help`);
-              const fallbackHtml = `<p>Real-world notes on one thing people keep asking about.</p>
-<h2>What matters</h2>
-<p>Here’s the short version people use day to day. [ANCHOR:${keyword}] fits best when you optimise for comfort, budget, and ~20–30 minute setup time.</p>
-<h2>Quick specifics</h2>
-<ul>
-  <li>Unit weight ~2–4 g per ear</li>
-  <li>Charging window 90–120 minutes</li>
-  <li>Noise floor ~28–32 dB</li>
-  <li>Battery 280–320 mAh</li>
-</ul>
-<h2>Conclusion</h2>
-<p>Use what you can maintain weekly; don’t chase specs you won’t notice after 48 hours.</p>`;
-              return { title: fallbackTitle, html: fallbackHtml };
-            } catch {
-              /* ignore */
-            }
-            return null;
-          }
-        }
-        return null;
-      };
-
-      // Worker loop
+      // Concurrency
+      let concurrency = Math.min(6, Math.max(1, Math.floor((navigator.hardwareConcurrency ?? 4) / 2)));
+      const MIN = 1, MAX = 8;
+      let idx = 0;
       const running = new Set<Promise<void>>();
+
       const startNext = () => {
-        if (index >= keywords.length) return;
-        const kr = keywords[index++];
-        const kw = kr.keyword;
-        const url = kr.url ?? null;
-        const curIndex = index;
+        if (idx >= groups.length) return;
+        const groupIndex = idx++;
+        const grp = groups[groupIndex];
+        const kws = grp.map(g => g.keyword);
+        const urlMap: Record<string, string | null> = {};
+        grp.forEach(g => { urlMap[g.keyword] = g.url ?? null; });
+
+        if (V()) console.log("[CONTENT] → generating group", groupIndex, kws);
 
         const task = (async () => {
           try {
-            const generated = await generateWithRetries(kw);
-            if (generated) {
-              // single, hyperlinked keyword in HTML
-              const linkedHtml = enforceSingleAnchoredKeyword(generated.html, kw, url);
+            // Strong instructions to enforce length + anchors:
+            const extra = [
+              "TOTAL WORD COUNT: 500–600 words (do not go below 500).",
+              "Title must be between 60–70 characters.",
+              "For EACH keyword provided, include EXACTLY ONE anchor token in the HTML like [ANCHOR:THE_KEYWORD] (no extra brackets or variants).",
+              "Use British English; natural, conversational tone; uneven cadence.",
+              "Return STRICT JSON with keys {\"title\",\"html\"}. No markdown, no commentary.",
+              (typeof (prefs as any)?.extraInstructions === "string" ? String((prefs as any).extraInstructions) : "").trim()
+            ].filter(Boolean).join(" ");
 
-              const contentItem: ContentItem = {
-                id: `${fileId}-${curIndex}-${Date.now()}`,
-                keyword: kw,
-                generatedContent: linkedHtml,
-                fileId,
-                fileName: file.name,
-                createdAt: new Date().toISOString(),
-                targetUrl: url,
-                title: generated.title, // Gemini-made title (60–70)
-              };
-              contentBuffer.push(contentItem);
-              if (contentBuffer.length >= FLUSH_COUNT) flushNow(); else scheduleFlush();
-            } else {
-              console.warn("generation returned null for keyword:", kw);
-            }
+            let result = await generateJSONTitleHtml({
+              keywords: kws,
+              instructions: extra,
+            });
+
+            // Title length clamp
+            const finalTitle = clampTitleToRange(result.title || kws[0], kws, 60, 70);
+
+            // Ensure anchors for all keywords, then pad to 500+ words
+            const withAnchors = applyAllAnchors(result.html, urlMap);
+            const finalHtml = ensureWordCountRange(withAnchors, 500);
+
+            const item: ContentItem = {
+              id: `${fileId}-${groupIndex}-${Date.now()}`,
+              keyword: kws[0],
+              keywordsUsed: kws,
+              generatedContent: finalHtml,
+              fileId,
+              fileName: file.name,
+              createdAt: new Date().toISOString(),
+              title: finalTitle,
+              targetUrl: urlMap[kws[0]] ?? null,
+              urlMap,
+              status: "success",
+            };
+
+            bufferItems.push(item);
+            scheduleFlush();
           } catch (e) {
-            console.error("Unexpected generate error:", e);
+            failedCount++;
+            console.error("group generate error:", e);
+            // minimal fallback — guarantees anchors for all keywords and pads to 500
+            const tokens = kws.map(k => `[ANCHOR:${k}]`).join(" ");
+            const html = ensureWordCountRange(`<p>${tokens}</p>`, 500);
+            const item: ContentItem = {
+              id: `${fileId}-${groupIndex}-${Date.now()}`,
+              keyword: kws[0],
+              keywordsUsed: kws,
+              generatedContent: applyAllAnchors(html, urlMap),
+              fileId,
+              fileName: file.name,
+              createdAt: new Date().toISOString(),
+              title: clampTitleToRange(`${kws[0]} — practical notes`, kws, 60, 70),
+              targetUrl: urlMap[kws[0]] ?? null,
+              urlMap,
+              status: "failed",
+            };
+            bufferItems.push(item);
+            scheduleFlush();
           } finally {
-            processedCount++;
-            throttleProgress(processedCount, keywords.length);
-            // adapt concurrency
-            if (consecutiveNetworkErrors === 0 && concurrency < MAX_CONCURRENCY) {
-              concurrency = Math.min(MAX_CONCURRENCY, concurrency + 0.2);
-            } else if (consecutiveNetworkErrors >= 3) {
-              concurrency = Math.max(MIN_CONCURRENCY, Math.floor(concurrency / 2));
-              consecutiveNetworkErrors = 0;
-            }
+            // count rows consumed
+            processedCount += grp.length;
+            updateProgress(processedCount, keywords.length);
           }
         })().finally(() => running.delete(task));
+
         running.add(task);
       };
 
-      while (index < keywords.length || running.size > 0) {
-        const curConcurrency = Math.max(MIN_CONCURRENCY, Math.min(MAX_CONCURRENCY, Math.floor(concurrency)));
-        while (running.size < curConcurrency && index < keywords.length) startNext();
-        if (running.size === 0 && index >= keywords.length) break;
-        // @ts-ignore
+      while (idx < groups.length || running.size > 0) {
+        const cur = Math.max(MIN, Math.min(MAX, Math.floor(concurrency)));
+        while (running.size < cur && idx < groups.length) startNext();
+        if (!running.size && idx >= groups.length) break;
         await Promise.race(Array.from(running));
+        // simple adaptive tweak
+        if (failedCount > 0 && concurrency > 2) concurrency -= 0.2;
+        else if (concurrency < MAX) concurrency += 0.1;
       }
 
       flushNow();
-      setExcelProjects((prev) => (prev ?? []).map((p) => (p.id === fileId ? { ...p, status: "completed", processedKeywords: keywords.length } : p)));
-      toast.success(`Finished processing ${file.name}. Generated content for ~${keywords.length} keywords.`);
+      setExcelProjects((prev) =>
+        (prev ?? []).map((p) =>
+          p.id === fileId
+            ? { ...p, status: "completed", processedKeywords: keywords.length, failedCount }
+            : p
+        )
+      );
+      const ok = keywords.length - failedCount;
+      toast.success(`Finished ${file.name}: ✅ ${ok} • ❌ ${failedCount}`);
       onProgress?.(100);
     } catch (error) {
       console.error("generateContent overall error:", error);
-      setExcelProjects((prev) => (prev ?? []).map((p) => (p.id === fileId ? { ...p, status: "error", error: error instanceof Error ? error.message : String(error) } : p)));
+      setExcelProjects((prev) =>
+        (prev ?? []).map((p) =>
+          p.id === fileId
+            ? {
+                ...p,
+                status: "error",
+                error: error instanceof Error ? error.message : String(error),
+              }
+            : p
+        )
+      );
       toast.error(`Failed processing ${file.name}: ${error instanceof Error ? error.message : String(error)}`);
       onProgress?.(100);
       throw error;

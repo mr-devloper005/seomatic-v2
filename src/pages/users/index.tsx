@@ -1,4 +1,4 @@
-import { UsersDataTable } from "./components/users_data_table";
+import { UsersDataTable } from "./components/users_data_table.tsx";
 
 export default function UsersPage() {
   return (

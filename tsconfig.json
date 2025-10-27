@@ -1,18 +1,13 @@
 {
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" }
+  ],
   "compilerOptions": {
-    "target": "ES2021",
-    "lib": ["ES2021", "DOM", "DOM.Iterable"],
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "jsx": "react-jsx",
     "baseUrl": ".",
-    "paths": { "@/*": ["src/*"] },
-    "allowJs": true,
-    "skipLibCheck": true,
-    "strict": true,
-    "noEmit": true,
-    "resolveJsonModule": true,
-    "isolatedModules": true
-  },
-  "include": ["src", "index.html"]
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  }
 }

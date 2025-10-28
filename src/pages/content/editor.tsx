@@ -1538,8 +1538,6 @@
 
 
 
-
-// src/pages/content/editor.tsx
 import React, { useEffect, useRef, useState } from "react";
 import ReactQuill from "react-quill";
 import "react-quill/dist/quill.snow.css";
@@ -1629,6 +1627,8 @@ function normalizeIncomingContent(raw: string) {
     return `<p${pAttr}>${updatedInner}</p>`;
   });
   s = s.replace(/<p>\s*<\/p>/g, "");
+  // Strip any leftover H2/H3 “Conclusion” blocks for consistency in editor view
+  s = s.replace(/<h[2-6][^>]*>\s*Conclusion\s*<\/h[2-6]>/gi, "");
   return s;
 }
 
@@ -1712,28 +1712,36 @@ export default function ContentEditorPage(): React.ReactElement {
     }, 300);
     return () => clearTimeout(t);
   }, [editorHtml, item]);
+const handleSave = () => {
+  if (!item) return;
 
-  const handleSave = () => {
-    if (!item) return;
-    const quill = quillRef.current?.getEditor();
-    const html = quill ? quill.root.innerHTML : editorHtml;
-    const updated = { ...item, title: (title || "").trim() || item.title || item.keyword, generatedContent: html };
-    try {
-      const raw = localStorage.getItem("content-items");
-      const arr = raw ? (JSON.parse(raw) as any[]) : [];
-      const idx = arr.findIndex((x) => x.id === item.id);
-      if (idx >= 0) arr[idx] = updated; else arr.push(updated);
-      localStorage.setItem("content-items", JSON.stringify(arr));
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify(updated));
-      localStorage.setItem(FALLBACK_KEY, JSON.stringify(updated));
-      setItem(updated);
-      alert("Saved locally. Content list updated.");
-      try { window.dispatchEvent(new Event("storage")); } catch {}
-    } catch (e) {
-      console.error("save error", e);
-      alert("Save failed");
-    }
+  const q = quillRef.current?.getEditor();
+  // Safely read the editor HTML; fall back to current state if needed
+  const html = q ? ((q as any).root?.innerHTML ?? editorHtml) : editorHtml;
+
+  const updated = {
+    ...item,
+    title: (title || "").trim() || item.title || item.keyword,
+    generatedContent: html,
   };
+
+  try {
+    const raw = localStorage.getItem("content-items");
+    const arr = raw ? (JSON.parse(raw) as any[]) : [];
+    const idx = arr.findIndex((x) => x.id === item.id);
+    if (idx >= 0) arr[idx] = updated; else arr.push(updated);
+    localStorage.setItem("content-items", JSON.stringify(arr));
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(updated));
+    localStorage.setItem(FALLBACK_KEY, JSON.stringify(updated));
+    setItem(updated);
+    alert("Saved locally. Content list updated.");
+    try { window.dispatchEvent(new Event("storage")); } catch {}
+  } catch (e) {
+    console.error("save error", e);
+    alert("Save failed");
+  }
+};
+
 
   if (loading) return <div>Loading editor…</div>;
   if (!item) return <div>No content item found to edit.</div>;
@@ -1742,36 +1750,48 @@ export default function ContentEditorPage(): React.ReactElement {
   const titleOk = titleLen >= 60 && titleLen <= 70;
 
   return (
-    <div style={{ maxWidth: 1200, margin: "18px auto", padding: 12 }}>
-      <style>{`
-        .ql-container { border: none; }
-        .ql-toolbar { border: 1px solid #e6e6e6; border-bottom: none; border-radius: 6px 6px 0 0; }
-        .ql-editor {
-          min-height: 700px;
-          padding: 18px;
-          font-size: 15px;
-          line-height: 1.7;
-        }
-        .ql-editor p { margin: 0 0 16px; }
-        .ql-editor h1, .ql-editor h2, .ql-editor h3 { margin: 0 0 14px; font-weight:700; }
-        .ql-editor img { max-width: 100%; height: auto; display: block; margin: 8px 0; }
-      `}</style>
+    <div style={{ height: "88vh", maxWidth: 1100, margin: "0 auto", padding: 12, display: "flex", flexDirection: "column" }}>
+<style>{`
+  .ql-container { border: none; }
+  .ql-toolbar { border: 1px solid #e6e6e6; border-bottom: none; border-radius: 6px 6px 0 0; }
+  .editor-shell {
+    height: calc(95vh - 210px);
+    border: 1px solid #e6e6e6;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #fff;
+  }
+  .ql-container.ql-snow {
+    height: 100%;
+  }
+  .ql-editor {
+    height: 100%;
+    max-height: 100%;
+    overflow-y: auto; /* ✅ only editor scrolls */
+    padding: 18px;
+    font-size: 15px;
+    line-height: 1.7;
+  }
+  .ql-editor p { margin: 0 0 16px; }
+  .ql-editor h1, .ql-editor h2, .ql-editor h3 { margin: 0 0 14px; font-weight:700; }
+  .ql-editor img { max-width: 100%; height: auto; display: block; margin: 8px 0; }
+`}</style>
 
       <div style={{ marginBottom: 8 }}>
         <input
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="Title (60–70 characters)"
+          placeholder="Title (H1, 60–70 characters)"
           style={{
             width: "100%",
             padding: "12px 14px",
-            fontSize: 22,
-            borderRadius: 6,
+            fontSize: 28,               // bigger H1 feel
+            borderRadius: 12,
             border: "1px solid #ddd",
             boxSizing: "border-box",
             marginBottom: 4,
-            fontWeight: 700,
+            fontWeight: 800,
             textAlign: "center",
           }}
         />
@@ -1780,16 +1800,19 @@ export default function ContentEditorPage(): React.ReactElement {
         </div>
       </div>
 
-      <div style={{ border: "1px solid #e6e6e6", borderRadius: 6, overflow: "hidden", background: "#fff" }}>
-        <ReactQuill
-          ref={(el) => { quillRef.current = el; }}
-          value={editorHtml}
-          onChange={(html) => setEditorHtml(html)}
-          modules={modules as any}
-          formats={formats as any}
-          placeholder="Write or paste content here..."
-          theme="snow"
-        />
+      {/* Make ONLY editor scroll */}
+      <div style={{ border: "1px solid #e6e6e6", borderRadius: 12, overflow: "hidden", background: "#fff", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+        <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+          <ReactQuill
+            ref={(el) => { quillRef.current = el; }}
+            value={editorHtml}
+            onChange={(html) => setEditorHtml(html)}
+            modules={modules as any}
+            formats={formats as any}
+            placeholder="Write or paste content here..."
+            theme="snow"
+          />
+        </div>
       </div>
 
       <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12 }}>
@@ -1806,7 +1829,7 @@ export default function ContentEditorPage(): React.ReactElement {
         <div style={{ display: "flex", gap: 8 }}>
           <button
             onClick={handleSave}
-            style={{ padding: "10px 14px", background: "#ef4444", color: "#fff", border: "none", borderRadius: 6 }}
+            style={{ padding: "10px 14px", background: "#22c55e", color: "#fff", border: "none", borderRadius: 8, fontWeight: 600 }}
           >
             Save
           </button>
@@ -1819,7 +1842,7 @@ export default function ContentEditorPage(): React.ReactElement {
                 .then(() => alert("HTML copied to clipboard"))
                 .catch(() => alert("Copy failed"));
             }}
-            style={{ padding: "10px 14px", borderRadius: 6 }}
+            style={{ padding: "10px 14px", borderRadius: 8 }}
           >
             Copy HTML
           </button>

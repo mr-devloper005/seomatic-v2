@@ -644,9 +644,6 @@
 //   );
 // }
 
-
-
-// src/pages/content/components/content-data-table.tsx
 import { useMemo, useState } from "react";
 import {
   type ColumnDef,
@@ -667,7 +664,7 @@ import { Badge } from "@/components/ui/badge";
 import { IconEye, IconDownload, IconSearch, IconFileSpreadsheet, IconCheck, IconX } from "@tabler/icons-react";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { toast } from "sonner";
-import { openContentEditor } from "@/hooks/use-content-generation";
+import { openContentEditor } from "../hooks/use-content-generation"
 
 interface ContentItem {
   id: string;
@@ -688,6 +685,17 @@ interface Props {
   contentItems?: ContentItem[] | null;
 }
 
+function stripTags(html: string) {
+  const tmp = document.createElement("div");
+  tmp.innerHTML = html || "";
+  return (tmp.textContent || tmp.innerText || "").replace(/\s+/g, " ").trim();
+}
+function makeSnippet(html: string, n = 180) {
+  const t = stripTags(html);
+  if (!t) return "-";
+  return t.length > n ? t.slice(0, n).trim() + "…" : t;
+}
+
 export function ContentDataTable({ projectId, contentItems: propContentItems }: Props) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -702,19 +710,6 @@ export function ContentDataTable({ projectId, contentItems: propContentItems }: 
 
   const columns: ColumnDef<ContentItem>[] = [
     {
-      accessorKey: "status",
-      header: "Status",
-      cell: ({ row }) => {
-        const s = row.original.status ?? "success";
-        return s === "success" ? (
-          <span className="inline-flex items-center gap-1 text-green-600"><IconCheck className="h-4 w-4" />OK</span>
-        ) : (
-          <span className="inline-flex items-center gap-1 text-red-600"><IconX className="h-4 w-4" />Fail</span>
-        );
-      },
-      size: 60,
-    },
-    {
       accessorKey: "keyword",
       header: "Keyword(s)",
       cell: ({ row }) => {
@@ -723,14 +718,10 @@ export function ContentDataTable({ projectId, contentItems: propContentItems }: 
       },
     },
     {
-      accessorKey: "title",
-      header: "Title",
-      cell: ({ row }) => <div className="max-w-[260px] truncate">{row.getValue("title") || "-"}</div>,
-    },
-    {
       accessorKey: "generatedContent",
       header: "Preview",
-      cell: ({ row }) => <div className="max-w-[320px] truncate text-muted-foreground" dangerouslySetInnerHTML={{__html: String(row.getValue("generatedContent"))}} />,
+      // Uniform snippet only (no HTML render) → faster & "only show content when clicked"
+      cell: ({ row }) => <div className="max-w-[320px] text-muted-foreground">{makeSnippet(row.original.generatedContent, 50)}</div>,
     },
     {
       accessorKey: "fileName",
@@ -826,7 +817,7 @@ export function ContentDataTable({ projectId, contentItems: propContentItems }: 
   }
 
   return (
-    <Card>
+    <Card className="rounded-2xl">
       <CardHeader>
         <div className="flex items-center justify-between w-full">
           <div>
@@ -839,39 +830,43 @@ export function ContentDataTable({ projectId, contentItems: propContentItems }: 
         </div>
       </CardHeader>
 
-      <CardContent>
-        <div className="space-y-4">
-          <div className="flex items-center gap-4">
-            <div className="relative flex-1 max-w-sm">
-              <IconSearch className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Search keywords..." value={String((table.getColumn("keyword")?.getFilterValue() as string) ?? "")}
-                onChange={(e) => table.getColumn("keyword")?.setFilterValue(e.target.value)} className="pl-8" />
+        <CardContent>
+          <div className="space-y-4">
+            <div className="flex items-center gap-4">
+              <div className="relative flex-1 max-w-sm">
+                <IconSearch className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search keywords..."
+                  value={String((table.getColumn("keyword")?.getFilterValue() as string) ?? "")}
+                  onChange={(e) => table.getColumn("keyword")?.setFilterValue(e.target.value)}
+                  className="pl-8"
+                />
+              </div>
+            </div>
+
+            <div className="rounded-md border overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  {table.getHeaderGroups().map(hg => (
+                    <TableRow key={hg.id}>
+                      {hg.headers.map(h => <TableHead key={h.id}>{h.isPlaceholder ? null : flexRender(h.column.columnDef.header, h.getContext())}</TableHead>)}
+                    </TableRow>
+                  ))}
+                </TableHeader>
+
+                <TableBody>
+                  {table.getRowModel().rows.length ? table.getRowModel().rows.map(row => (
+                    <TableRow key={row.id} data-state={row.getIsSelected() && "selected"} className="transition-colors hover:bg-muted/40">
+                      {row.getVisibleCells().map(cell => <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>)}
+                    </TableRow>
+                  )) : (
+                    <TableRow><TableCell colSpan={columns.length} className="h-24 text-center">No content found.</TableCell></TableRow>
+                  )}
+                </TableBody>
+              </Table>
             </div>
           </div>
-
-          <div className="rounded-md border overflow-x-auto">
-            <Table>
-              <TableHeader>
-                {table.getHeaderGroups().map(hg => (
-                  <TableRow key={hg.id}>
-                    {hg.headers.map(h => <TableHead key={h.id}>{h.isPlaceholder ? null : flexRender(h.column.columnDef.header, h.getContext())}</TableHead>)}
-                  </TableRow>
-                ))}
-              </TableHeader>
-
-              <TableBody>
-                {table.getRowModel().rows.length ? table.getRowModel().rows.map(row => (
-                  <TableRow key={row.id} data-state={row.getIsSelected() && "selected"}>
-                    {row.getVisibleCells().map(cell => <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>)}
-                  </TableRow>
-                )) : (
-                  <TableRow><TableCell colSpan={columns.length} className="h-24 text-center">No content found.</TableCell></TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </div>
-      </CardContent>
+        </CardContent>
     </Card>
   );
 }

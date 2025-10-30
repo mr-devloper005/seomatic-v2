@@ -1851,3 +1851,296 @@ const handleSave = () => {
     </div>
   );
 }
+
+
+// import React, { useEffect, useRef, useState } from "react";
+// import ReactQuill from "react-quill";
+// import "react-quill/dist/quill.snow.css";
+
+// /**
+//  * Premium Light Editor — Only editor scrolls, page never scrolls.
+//  * Numbers (words & characters) appear at the very END of the editor scroll.
+//  */
+
+// const SESSION_KEY = "open-content-item_v1";
+// const FALLBACK_KEY = `${SESSION_KEY}_fallback`;
+
+// function getStoredOpenItem(): any | null {
+//   try {
+//     const raw = sessionStorage.getItem(SESSION_KEY) ?? localStorage.getItem(FALLBACK_KEY);
+//     return raw ? JSON.parse(raw) : null;
+//   } catch {
+//     return null;
+//   }
+// }
+
+// function escapeHtml(s: string) {
+//   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+// }
+
+// function applyAnchorTokenOnce(html: string, keyword: string, url?: string | null) {
+//   if (!html || !keyword) return html || "";
+//   const token = `[ANCHOR:${keyword}]`;
+//   if (!html.includes(token)) return html;
+//   const safeUrl = url ? escapeHtml(url) : "";
+//   const safeKw = escapeHtml(keyword);
+//   const anchor = url
+//     ? `<a href="${safeUrl}" target="_blank" rel="nofollow noopener"><strong>${safeKw}</strong></a>`
+//     : `<strong>${safeKw}</strong>`;
+//   return html.replace(token, anchor);
+// }
+
+// function linkifyFirstOccurrenceInQuill(quill: any, keyword: string, url?: string | null) {
+//   if (!quill || !keyword) return;
+//   const plain = quill.getText();
+//   const regex = new RegExp(keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+//   const match = plain.match(regex);
+//   const idx = match?.index ?? plain.toLowerCase().indexOf(keyword.toLowerCase());
+//   if (idx >= 0) {
+//     try {
+//       if (url) quill.formatText(idx, keyword.length, "link", url);
+//       quill.formatText(idx, keyword.length, "bold", true);
+//     } catch (e) {
+//       console.warn("linkify error", e);
+//     }
+//   }
+// }
+
+// function normalizeIncomingContent(raw: string) {
+//   if (!raw) return "";
+//   let s = String(raw);
+//   const hasHtml = /<\/?[a-z][\s\S]*>/i.test(s);
+//   if (!hasHtml) {
+//     s = s
+//       .split(/\n+/)
+//       .map((line) => `<p>${escapeHtml(line.trim())}</p>`)
+//       .join("");
+//     return s;
+//   }
+//   return s.replace(/<p>\s*<\/p>/g, "");
+// }
+
+// function imageHandler(quill: any) {
+//   const input = document.createElement("input");
+//   input.type = "file";
+//   input.accept = "image/*";
+//   input.click();
+//   input.onchange = () => {
+//     const file = input.files?.[0];
+//     if (!file) return;
+//     const reader = new FileReader();
+//     reader.onload = () => {
+//       const range = quill.getSelection(true);
+//       quill.insertEmbed(range.index, "image", reader.result);
+//     };
+//     reader.readAsDataURL(file);
+//   };
+// }
+
+// const modules = {
+//   toolbar: {
+//     container: [
+//       [{ header: [1, 2, 3, false] }],
+//       ["bold", "italic", "underline", "strike"],
+//       [{ align: [] }],
+//       [{ list: "ordered" }, { list: "bullet" }],
+//       ["link", "image"],
+//       ["clean"],
+//     ],
+//     handlers: { image(this: any) { imageHandler(this.quill); } },
+//   },
+//   clipboard: { matchVisual: false },
+// };
+
+// const formats = ["header", "bold", "italic", "underline", "strike", "align", "list", "bullet", "link", "image"];
+
+// export default function ContentEditorPage(): React.ReactElement {
+//   const [loading, setLoading] = useState(true);
+//   const [item, setItem] = useState<any | null>(null);
+//   const [title, setTitle] = useState("");
+//   const [contentName, setContentName] = useState("");
+//   const [editorHtml, setEditorHtml] = useState("");
+//   const [wordCount, setWordCount] = useState(0);
+//   const [charCount, setCharCount] = useState(0);
+//   const quillRef = useRef<ReactQuill | null>(null);
+
+//   useEffect(() => {
+//     const found = getStoredOpenItem();
+//     setItem(found);
+//     if (found) {
+//       const kw = found.keyword ?? "";
+//       const url = found.targetUrl ?? found.keywordLink ?? undefined;
+//       setTitle(found.title ?? kw);
+//       setContentName(found.contentName ?? kw);
+//       const withAnchor = applyAnchorTokenOnce(found.generatedContent ?? "", kw, url);
+//       setEditorHtml(normalizeIncomingContent(withAnchor) || "<p></p>");
+//     }
+//     setLoading(false);
+//   }, []);
+
+//   useEffect(() => {
+//     const q = quillRef.current?.getEditor();
+//     if (!q) return;
+//     const text = q.getText();
+//     setWordCount(text.trim().split(/\s+/).filter(Boolean).length);
+//     setCharCount(text.replace(/\s/g, "").length);
+//   }, [editorHtml]);
+
+//   const handleSave = () => {
+//     if (!item) return;
+//     const q = quillRef.current?.getEditor();
+//     const html = q?.root?.innerHTML ?? editorHtml;
+//     const updated = { ...item, title: title.trim() || item.title || item.keyword, contentName: contentName.trim() || item.contentName || item.keyword, generatedContent: html };
+//     try {
+//       const arr = JSON.parse(localStorage.getItem("content-items") || "[]");
+//       const idx = arr.findIndex((x: any) => x.id === item.id);
+//       if (idx >= 0) arr[idx] = updated; else arr.push(updated);
+//       localStorage.setItem("content-items", JSON.stringify(arr));
+//       sessionStorage.setItem(SESSION_KEY, JSON.stringify(updated));
+//       localStorage.setItem(FALLBACK_KEY, JSON.stringify(updated));
+//       setItem(updated);
+//       alert("Saved locally.");
+//     } catch (e) {
+//       console.error(e);
+//       alert("Save failed.");
+//     }
+//   };
+
+//   if (loading) return <div className="text-center text-gray-600 py-10">Loading editor…</div>;
+//   if (!item) return <div className="text-center text-gray-500 py-10">No content item found.</div>;
+
+//   const titleLen = title.trim().length;
+//   const titleOk = titleLen >= 60 && titleLen <= 70;
+
+//   return (
+//     <div className="fixed inset-0 overflow-hidden bg-[conic-gradient(at_10%_10%,#ffffff, #f7fbff, #fdf7ff)]">
+//       <style>{`
+//         /* 1) PAGE SHOULD NOT SCROLL */
+//         html, body, #__next { height: 100%; overflow: hidden; }
+
+//         /* 2) Centered column; uses min-height:0 so inner flex can scroll */
+//         .page { height: 100%; display: flex; flex-direction: column; align-items: center; }
+//         .col { height: 100%; width: min(1100px, 94vw); display: flex; flex-direction: column; gap: 14px; padding: 18px; }
+
+//         /* 3) Cards */
+//         .card { background: #ffffffea; backdrop-filter: saturate(1.4) blur(6px); border: 1px solid #E7EAF3; border-radius: 18px; box-shadow: 0 10px 28px rgba(30, 64, 175, 0.08); }
+
+//         /* 4) EDITOR LAYOUT — ONLY THIS WRAPPER SCROLLS */
+//         .editor-outer { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+//         .toolbar-wrap { border-bottom: 1px solid #e8ecf6; }
+//         .editor-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+
+//         /* Make Quill container auto-height; let the wrapper handle scroll */
+//         .ql-container.ql-snow { border: 0; height: auto; }
+//         .ql-editor { padding: 20px 24px; font-size: 16px; line-height: 1.8; color: #0f172a; }
+
+//         /* Premium toolbar theme */
+//         .ql-toolbar.ql-snow { border: 0; border-radius: 18px 18px 0 0; background: linear-gradient(90deg,#eef2ff,#e0f2fe,#fae8ff); }
+//         .ql-toolbar .ql-picker, .ql-toolbar button { filter: saturate(1.1); }
+
+//         /* Pretty scrollbar inside editor only */
+//         .editor-scroll::-webkit-scrollbar { width: 10px; }
+//         .editor-scroll::-webkit-scrollbar-thumb { background: linear-gradient(#60a5fa,#a78bfa,#f472b6); border-radius: 8px; }
+//         .editor-scroll { scrollbar-width: thin; }
+//       `}</style>
+
+//       <div className="page bg-white">
+        
+//         {/* Header */}
+//         <div className="card  mt-4 w-[min(1100px,94vw)] text-center py-4 px-5">
+//           <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-700 via-sky-700 to-fuchsia-700">
+//             Content Editor
+//           </h1>
+//           <p className="text-xs text-slate-600">Premium light UI • Only editor scrolls • Counters at the end</p>
+//         </div>
+
+//         <div className="col">
+//           {/* Title + Content Name */}
+//           <div className="grid grid-cols-1 gap-4">
+//             <div className="card p-4">
+//               <label className="block text-xs font-semibold text-slate-600 mb-1">Title (H1, 60–70 characters)</label>
+//               <input
+//                 value={title}
+//                 onChange={(e) => setTitle(e.target.value)}
+//                 placeholder="Write an H1 title..."
+//                 className="w-full text-center text-2xl md:text-3xl font-bold py-3 px-4 border border-indigo-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-400 bg-white"
+//               />
+//               <div className={`text-right text-[11px] mt-1 ${titleOk ? "text-emerald-600" : "text-rose-500"}`}>{titleLen} / 60–70</div>
+//             </div>
+//             {/* <div className="card p-4">
+//               <label className="block text-xs font-semibold text-slate-600 mb-1">Content Name</label>
+//               <input
+//                 value={contentName}
+//                 onChange={(e) => setContentName(e.target.value)}
+//                 placeholder="Internal content name / slug"
+//                 className="w-full text-center text-lg font-semibold py-3 px-4 border border-sky-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-fuchsia-300 bg-white"
+//               />
+//             </div> */}
+//           </div>
+
+//           {/* EDITOR CARD */}
+//           <div className="card editor-outer">
+//             {/* Toolbar (non-sticky) */}
+//             <div className="toolbar-wrap rounded-t-[18px]">
+//               <ReactQuill
+//                 value={""}
+//                 readOnly
+//                 modules={{ toolbar: true }}
+//                 theme="snow"
+//                 style={{ display: "none" }}
+//               />
+//             </div>
+
+//             {/* Scroll wrapper containing the live editor AND the stats footer at the very end */}
+//             <div className="editor-scroll">
+//               <ReactQuill
+//                 ref={(el) => (quillRef.current = el)}
+//                 value={editorHtml}
+//                 onChange={setEditorHtml}
+//                 modules={modules as any}
+//                 formats={formats as any}
+//                 placeholder="Write or paste content here..."
+//                 theme="snow"
+//               />
+
+//               {/* Numbers at the END of the editor scroll */}
+//               <div className="px-6 py-4 text-xs text-slate-600 border-t border-slate-200 bg-white/80">
+//                 <div className="flex gap-6">
+//                   <div>Words: <span className="font-semibold text-slate-900">{wordCount}</span></div>
+//                   <div>Characters: <span className="font-semibold text-slate-900">{charCount}</span></div>
+//                 </div>
+//               </div>
+//             </div>
+//           </div>
+
+//           {/* Actions */}
+//           <div className="mx-auto flex items-center gap-8">
+//             <button onClick={handleSave} className="px-6 py-2.5 bg-gradient-to-r from-emerald-500 to-sky-500 text-white rounded-xl font-semibold shadow-md hover:opacity-90">
+//               Save
+//             </button>
+//             <button
+//               onClick={() => {
+//                 const q = quillRef.current?.getEditor();
+//                 const html = `<h1>${escapeHtml(title)}</h1>\n` + (q ? q.root.innerHTML : editorHtml);
+//                 navigator.clipboard.writeText(html).then(() => alert("HTML copied!"));
+//               }}
+//               className="px-6 py-2.5 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 shadow-sm"
+//             >
+//               Copy HTML
+//             </button>
+//           </div>
+
+//           {/* Meta */}
+//           <div className="text-center text-sm text-slate-600">
+//             <div><strong>Keyword:</strong> <span className="text-slate-800">{item.keyword}</span></div>
+//             {item.targetUrl && (
+//               <div>
+//                 <strong>Keyword link:</strong> <a href={item.targetUrl} target="_blank" rel="noreferrer" className="text-sky-600 underline">{item.targetUrl}</a>
+//               </div>
+//             )}
+//           </div>
+//         </div>
+//       </div>
+//     </div>
+//   );
+// }

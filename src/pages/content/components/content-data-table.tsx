@@ -661,7 +661,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { IconEye, IconDownload, IconSearch, IconFileSpreadsheet, IconCheck, IconX } from "@tabler/icons-react";
+import { IconEye, IconDownload, IconSearch, IconFileSpreadsheet } from "@tabler/icons-react";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { toast } from "sonner";
 import { openContentEditor } from "../hooks/use-content-generation"

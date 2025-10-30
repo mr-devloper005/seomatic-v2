@@ -8974,7 +8974,3012 @@
 
 
 
-import { useState } from "react";
+// import { useState } from "react";
+// import { toast } from "sonner";
+// import { useLocalStorage } from "@/hooks/use-local-storage";
+// import * as XLSX from "xlsx";
+// import { generateJSONTitleHtml, applyAnchorTokens } from "@/lib/llm/api";
+// import { buildPlanFromPrefs } from "@/lib/llm/prompt-engine";
+// import type { ContentPreferences, KeywordMode } from "@/hooks/use-preferences";
+
+// /* =========================
+//    Read latest saved prefs
+//    ========================= */
+// const PREF_KEY = "content-preferences_v3";
+// function getFreshPrefs(): ContentPreferences {
+//   try {
+//     const raw = localStorage.getItem(PREF_KEY);
+//     return raw ? (JSON.parse(raw) as ContentPreferences) : ({} as any);
+//   } catch { return {} as any; }
+// }
+
+// /* =========================
+//    Types & Editor opener
+//    ========================= */
+// export interface ContentItem {
+//   id: string;
+//   keyword: string;
+//   keywordsUsed?: string[];
+//   generatedContent: string;
+//   fileId: string;
+//   fileName: string;
+//   createdAt: string;
+//   title?: string;
+//   targetUrl?: string | null;
+//   urlMap?: Record<string, string | null>;
+//   status?: "success" | "failed";
+//   prefsSnapshot?: Partial<ContentPreferences>;
+// }
+// interface ExcelProject {
+//   id: string;
+//   fileName: string;
+//   status: "pending" | "processing" | "completed" | "error";
+//   totalKeywords: number;
+//   processedKeywords: number;
+//   createdAt: string;
+//   error?: string;
+//   failedCount?: number;
+// }
+// type GenerateProgressCallback = (p: number) => void;
+
+// const SESSION_KEY = "open-content-item_v1";
+// export function openContentEditor(item: ContentItem) {
+//   try {
+//     try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(item)); }
+//     catch { localStorage.setItem(`${SESSION_KEY}_fallback`, JSON.stringify(item)); }
+//     const win = window.open("/content/editor", "_blank");
+//     if (!win) toast.error("Popup blocked — allow popups to open the editor in a new tab.");
+//   } catch {
+//     try { window.location.href = "/content/editor"; } catch {}
+//   }
+// }
+
+// /* =========================
+//    Excel parsing (keywords + optional URLs)
+//    ========================= */
+// function norm(s: unknown) {
+//   return String(s ?? "").toLowerCase().replace(/[.\-_/]/g, " ").replace(/\s+/g, " ").trim();
+// }
+// function isLikelyUrlOrDomain(s?: string | null) {
+//   if (!s) return false;
+//   const t = String(s).trim();
+//   if (!t) return false;
+//   if (/^https?:\/\//i.test(t)) return true;
+//   if (/^www\./i.test(t)) return true;
+//   if (/^[a-z0-9\-]+(\.[a-z0-9\-]+)+$/i.test(t) && !/\s/.test(t)) return true;
+//   return false;
+// }
+// function sanitizeKeyword(raw: unknown): string {
+//   if (raw == null) return "";
+//   let v = String(raw).replace(/\u00A0/g, " ").trim();
+//   if (!v) return "";
+//   v = v.replace(/^\(?\s*\d+[\.\):-]?\s*/u, "").trim();
+//   v = v.replace(/^[\u2022\-\*]\s*/, "").trim();
+//   if (/^[\d\.,\s]+$/.test(v)) return "";
+//   if (isLikelyUrlOrDomain(v)) return "";
+//   if ((v.match(/[A-Za-z\u00C0-\u024F\u0400-\u04FF\u0900-\u097F]/g) || []).length < 2) return "";
+//   v = v.replace(/^[\W_]+|[\W_]+$/g, "").trim();
+//   if (v.length < 2 || v.length > 180) return "";
+//   return v;
+// }
+// type KeywordRow = { keyword: string; url?: string | null };
+
+// const KW_HEADERS = new Set(["keyword","keywords","focus keyword","search term","term","query","topic","title","key word"]);
+// const URL_HEADERS = new Set(["url","link","target url","target","target page","landing page","page url","destination","href","target link"]);
+
+// function detectHeaderRowAndColumns(rows: unknown[][]) {
+//   let headerRowIndex = -1;
+//   const maxCheck = Math.min(rows.length, 6);
+//   for (let i = 0; i < maxCheck; i++) {
+//     const r = rows[i];
+//     if (!Array.isArray(r)) continue;
+//     const nonEmpty = r.filter((c) => String(c ?? "").trim().length > 0);
+//     const mostlyText = nonEmpty.filter((c) => /[A-Za-zА-Яа-яЁё\u0900-\u097F]/.test(String(c))).length >= Math.ceil(nonEmpty.length * 0.5);
+//     if (nonEmpty.length >= 2 && mostlyText) { headerRowIndex = i; break; }
+//   }
+//   if (headerRowIndex === -1) headerRowIndex = 0;
+
+//   const headers = (rows[headerRowIndex] as unknown[]).map(norm);
+//   let keywordCol = -1, urlCol = -1;
+//   headers.forEach((h, idx) => {
+//     if (keywordCol === -1 && KW_HEADERS.has(h)) keywordCol = idx;
+//     if (urlCol === -1 && URL_HEADERS.has(h)) urlCol = idx;
+//   });
+
+//   if (keywordCol === -1) {
+//     const lookahead = rows.slice(headerRowIndex + 1, headerRowIndex + 201);
+//     const maxCols = Math.max(...rows.map((r) => (Array.isArray(r) ? r.length : 0)), 0);
+//     let bestCol = -1, bestScore = 0;
+//     for (let c = 0; c < maxCols; c++) {
+//       let score = 0, checks = 0;
+//       for (const rr of lookahead) {
+//         if (!Array.isArray(rr)) continue;
+//         const s = sanitizeKeyword(rr[c]);
+//         if (s) score++;
+//         if (rr[c] !== undefined && rr[c] !== null && String(rr[c]).trim() !== "") checks++;
+//       }
+//       if (checks === 0) continue;
+//       const weighted = score * 100 + Math.min(checks, 100);
+//       if (weighted > bestScore) { bestScore = weighted; bestCol = c; }
+//     }
+//     if (bestCol !== -1) keywordCol = bestCol;
+//   }
+//   return { headerRowIndex, keywordCol: keywordCol === -1 ? null : keywordCol, urlCol: urlCol === -1 ? null : urlCol };
+// }
+
+// function extractKeywordsFromWorksheetWithUrls(worksheet: XLSX.WorkSheet): KeywordRow[] {
+//   const rows = XLSX.utils.sheet_to_json<unknown[]>(worksheet, { header: 1, raw: true }) as unknown[][];
+//   if (!rows || rows.length === 0) return [];
+//   const { headerRowIndex, keywordCol, urlCol } = detectHeaderRowAndColumns(rows);
+//   const start = Math.min(rows.length - 1, headerRowIndex + 1);
+//   const dataRows = rows.slice(start);
+//   const maxCols = Math.max(...rows.map((r) => (Array.isArray(r) ? r.length : 0)), 0);
+
+//   const out: KeywordRow[] = [];
+//   const seen = new Set<string>();
+
+//   for (const r of dataRows) {
+//     if (!Array.isArray(r)) continue;
+
+//     let k = "";
+//     if (keywordCol != null) k = sanitizeKeyword(r[keywordCol]);
+//     if (!k) {
+//       for (let c = 0; c < maxCols; c++) {
+//         const cand = sanitizeKeyword(r[c]);
+//         if (cand) { k = cand; break; }
+//       }
+//     }
+//     if (!k || seen.has(k)) continue;
+
+//     let url: string | null = null;
+//     if (urlCol != null) {
+//       const raw = String(r[urlCol] ?? "").trim();
+//       if (raw && isLikelyUrlOrDomain(raw)) url = /^https?:\/\//i.test(raw) ? raw : "https://" + raw;
+//     }
+//     if (!url) {
+//       for (let offset = -3; offset <= 3; offset++) {
+//         if (offset === 0) continue;
+//         const idx = (keywordCol ?? 0) + offset;
+//         if (idx < 0 || idx >= maxCols) continue;
+//         const maybe = r[idx];
+//         if (!maybe) continue;
+//         const s = String(maybe).trim();
+//         if (isLikelyUrlOrDomain(s)) { url = /^https?:\/\//i.test(s) ? s : "https://" + s; break; }
+//       }
+//     }
+//     out.push({ keyword: k, url });
+//     seen.add(k);
+//   }
+//   return out;
+// }
+
+// function extractKeywordsFromWorkbookBufferWithUrls(buffer: ArrayBuffer | Uint8Array) {
+//   const workbook = XLSX.read(buffer, { type: "array" });
+//   const sheetNames = workbook.SheetNames ?? [];
+//   const combined: KeywordRow[] = [];
+//   const seen = new Set<string>();
+//   for (const sheetName of sheetNames) {
+//     try {
+//       const sheet = workbook.Sheets[sheetName];
+//       const ks = extractKeywordsFromWorksheetWithUrls(sheet);
+//       for (const k of ks) if (!seen.has(k.keyword)) { seen.add(k.keyword); combined.push(k); }
+//       if (combined.length > 10000) break;
+//     } catch (e) {
+//       console.warn("worksheet parse failed:", sheetName, e);
+//     }
+//   }
+//   return { keywords: combined };
+// }
+
+// /* =========================
+//    Language helpers & H1 banks
+//    ========================= */
+// type LangCode = "en" | "hi" | "ru";
+// function lcOf(pref?: string): LangCode {
+//   const t = (pref || "").toLowerCase();
+//   if (t.includes("hi") || t.includes("hindi") || t.includes("हिंदी")) return "hi";
+//   if (t.includes("ru") || t.includes("russian") || t.includes("рус")) return "ru";
+//   return "en";
+// }
+// function getH1Bank(lc: LangCode): string[] {
+//   if (lc === "ru") {
+//     return ["Почему это важно", "Полезные особенности", "Что проверить заранее", "Типичные ошибки и решения", "Практические советы", "Как закрепить результат"];
+//   }
+//   if (lc === "hi") {
+//     return ["क्यों यह महत्वपूर्ण है", "मदद करने वाली मुख्य बातें", "समय बचाने वाले जाँच-बिंदु", "सामान्य गलतियाँ और उपाय", "व्यावहारिक सुझाव", "सीख को स्थायी बनाएं"];
+//   }
+//   return ["Why This Matters","Core Features That Help","Checks That Save Time","Common Pitfalls & Fixes","Real-World Tips","Make It Stick"];
+// }
+// function conclusionHead(lc: LangCode): string {
+//   return lc === "ru" ? "Заключение" : lc === "hi" ? "निष्कर्ष" : "Conclusion";
+// }
+// function stripTagsFast(html: string) {
+//   return (html || "")
+//     .replace(/<script[\s\S]*?<\/script>/gi, " ")
+//     .replace(/<style[\s\S]*?<\/style>/gi, " ")
+//     .replace(/<\/?[^>]+>/g, " ")
+//     .replace(/&nbsp;|&#160;/g, " ")
+//     .replace(/\s+/g, " ").trim();
+// }
+// function wordCount(s: string) {
+//   const t = (s || "").replace(/\s+/g, " ").trim();
+//   if (!t) return 0;
+//   return t.split(/\s+/).filter(Boolean).length;
+// }
+// function clamp(n: number, min: number, max: number) { return Math.max(min, Math.min(max, n)); }
+// function dedupeInstructionLeaks(s: string) {
+//   const lines = s.split(/\n+/).map((x) => x.trim()).filter(Boolean);
+//   const out: string[] = [];
+//   const drop = [/^be specific and concrete/i,/^in practice, aim/i,/^focus on clarity/i,/^do not copy or paraphrase/i,/^tip:/i];
+//   const seen = new Set<string>();
+//   for (const ln of lines) {
+//     if (drop.some((re) => re.test(ln))) continue;
+//     const key = ln.toLowerCase();
+//     if (seen.has(key)) continue;
+//     seen.add(key);
+//     out.push(ln);
+//   }
+//   return out.join("\n");
+// }
+
+// /* =========================
+//    Repetition guard
+//    ========================= */
+// function squashRepetition(text: string): string {
+//   let out = text.replace(/(\b([a-z\u0400-\u04ff\u0900-\u097f]{2,})\b\.?)(\s+\1){2,}/gi, (_m, a) => `${a} ${a}`);
+//   out = out.replace(/(\b[^\s<>{}]+\b(?:\s+\b[^\s<>{}]+\b){0,2})([.!?])?(?:\s+\1\2?){2,}/gi, (_m, a, p = "") => `${a}${p} ${a}${p}`);
+//   out = out.replace(/(?:\s*\bforward\.\b){2,}\s*$/gi, "");
+//   return out;
+// }
+
+// /* =========================
+//    Language detection (script-based, strong heuristic)
+//    ========================= */
+// type Script = "latin" | "cyrillic" | "devanagari";
+// function detectScript(s: string): Script {
+//   const t = stripTagsFast(s);
+//   let lat = 0, cyr = 0, dev = 0;
+//   for (const ch of t) {
+//     const code = ch.charCodeAt(0);
+//     if ((code >= 0x0041 && code <= 0x02AF) || (code >= 0x1E00 && code <= 0x1EFF)) lat++;
+//     else if (code >= 0x0400 && code <= 0x04FF) cyr++;
+//     else if (code >= 0x0900 && code <= 0x097F) dev++;
+//   }
+//   const total = lat + cyr + dev || 1;
+//   if (cyr / total >= 0.6) return "cyrillic";
+//   if (dev / total >= 0.6) return "devanagari";
+//   return "latin";
+// }
+// function expectScript(lc: LangCode): Script {
+//   return lc === "ru" ? "cyrillic" : lc === "hi" ? "devanagari" : "latin";
+// }
+
+// /* =========================
+//    H1/P extraction & shaping
+//    ========================= */
+// function extractH1PSections(html: string) {
+//   const out: { h: string; p: string }[] = [];
+//   if (!html) return out;
+//   const cleaned = html.replace(/\bundefined\b/gi, "");
+//   const h1Matches = cleaned.match(/<h1>[\s\S]*?<\/h1>/gi) || [];
+//   let cursor = 0;
+//   for (let i = 0; i < h1Matches.length; i++) {
+//     const h = h1Matches[i];
+//     const idx = cleaned.indexOf(h, cursor);
+//     if (idx === -1) continue;
+//     cursor = idx + h.length;
+//     const pMatch = cleaned.slice(cursor).match(/<p>[\s\S]*?<\/p>/i);
+//     const p = pMatch ? pMatch[0] : "";
+//     if (p) { out.push({ h, p }); cursor += p.length; }
+//   }
+//   return out;
+// }
+
+// function ensureH1SectionsFromAnyHtml(rawHtml: string, wantSections: number, paraMin: number, paraMax: number, lc: LangCode) {
+//   const pairs = extractH1PSections(rawHtml);
+//   if (pairs.length >= wantSections) {
+//     return pairs.slice(0, wantSections).map(({ h, p }) => `${h}${p}`);
+//   }
+//   const cleaned = dedupeInstructionLeaks(
+//     rawHtml.replace(/```[\s\S]*?```/g, " ").replace(/\bundefined\b/gi, " ").replace(/\[ANCHOR:[^\]]+\]/g, " ")
+//   );
+//   const words = stripTagsFast(squashRepetition(cleaned)).split(/\s+/).filter(Boolean);
+//   const sections: string[] = [];
+//   let idx = 0;
+//   const BANK = getH1Bank(lc);
+//   for (let s = 0; s < wantSections; s++) {
+//     let take = paraMin + Math.floor(Math.random() * (paraMax - paraMin + 1));
+//     if (idx + take > words.length) take = Math.min(paraMax, Math.max(paraMin, words.length - idx));
+//     if (take <= 0) { idx = 0; take = Math.min(paraMax, Math.max(paraMin, words.length)); }
+//     const chunk = words.slice(idx, idx + take).join(" ").trim();
+//     const h1 = BANK[s % BANK.length];
+//     sections.push(`<h1>${h1}</h1><p>${chunk}</p>`);
+//     idx += take;
+//   }
+//   return sections;
+// }
+
+// function fillerBank(lc: LangCode): string[] {
+//   if (lc === "ru") {
+//     return [
+//       "Завтра пересмотрите заметки.",
+//       "Сохраняйте последовательность и шаг за шагом улучшайте.",
+//       "Меняйте только одну вещь за раз.",
+//       "Коротко измерьте результат и двигайтесь дальше.",
+//       "Стабильно поддерживайте темп.",
+//     ];
+//   }
+//   if (lc === "hi") {
+//     return [
+//       "कल अपने नोट्स दोबारा देखें।",
+//       "स्थिरता रखें और थोड़ा-थोड़ा सुधार करें।",
+//       "एक समय में सिर्फ़ एक बदलाव पर ध्यान दें।",
+//       "थोड़ा मापें और आगे बढ़ें।",
+//       "गति हल्की रखें पर जारी रखें।",
+//     ];
+//   }
+//   return [
+//     "Review your notes tomorrow.",
+//     "Stay consistent and iterate.",
+//     "Change only one thing at a time.",
+//     "Measure briefly, then move on.",
+//     "Keep momentum light but steady.",
+//   ];
+// }
+
+// function normalizeParagraphWordRange(html: string, minW: number, maxW: number, lc: LangCode, pad: boolean) {
+//   const fillers = fillerBank(lc);
+//   const parts: string[] = [];
+//   const regex = /(<h1>[\s\S]*?<\/h1>)\s*(<p>[\s\S]*?<\/p>)/gi;
+//   let m: RegExpExecArray | null;
+//   let lastIndex = 0;
+
+//   while ((m = regex.exec(html))) {
+//     parts.push(html.slice(lastIndex, m.index));
+//     const h = m[1];
+//     let p = m[2];
+
+//     let inner = stripTagsFast(p);
+//     inner = squashRepetition(inner);
+
+//     let ws = inner.split(/\s+/).filter(Boolean);
+//     if (ws.length > maxW) {
+//       ws = ws.slice(0, maxW);
+//     } else if (pad && ws.length < minW) {
+//       let i = 0;
+//       while (ws.length < minW && i < 60) {
+//         ws = ws.concat(fillers[i % fillers.length].split(/\s+/));
+//         i++;
+//       }
+//       if (ws.length > maxW) ws = ws.slice(0, maxW);
+//     }
+//     p = `<p>${ws.join(" ")}</p>`;
+//     parts.push(`${h}${p}`);
+//     lastIndex = regex.lastIndex;
+//   }
+//   parts.push(html.slice(lastIndex));
+//   return parts.join("");
+// }
+
+// /* body sanitize: drop stray "Conclusion / Заключение / Вывод(ы) / निष्कर्ष / समापन" prefixes inside body paragraphs */
+// function sanitizeBodySections(sections: string[], lc: LangCode) {
+//   const conclAlts = lc === "ru"
+//     ? /(Заключение|Выводы?|Итог)\s*[:\-–—]?\s*/i
+//     : lc === "hi"
+//       ? /(निष्कर्ष|समापन|उपसंहार)\s*[:\-–—]?\s*/i
+//       : /(Conclusion)\s*[:\-–—]?\s*/i;
+
+//   return sections.map((sec) => {
+//     if (new RegExp(`^<h1>\\s*${conclusionHead(lc)}\\s*</h1>`, "i").test(sec)) return sec;
+//     return sec.replace(/(<p>)([\s\S]*?)(<\/p>)/i, (_m, open, inner, close) => {
+//       let t = inner.replace(conclAlts, "");
+//       t = squashRepetition(t);
+//       return `${open}${t}${close}`;
+//     });
+//   });
+// }
+
+// function removeAllTokens(s: string) {
+//   return s.replace(/\[ANCHOR:[^\]]+\]/g, "");
+// }
+
+// function distributeTokensExact(sections: string[], keywords: string[]) {
+//   const N = sections.length;
+//   let out = sections.map(removeAllTokens);
+//   const map: Record<number, string | null> = {};
+//   if (keywords.length === 1) {
+//     map[0] = keywords[0];
+//   } else if (keywords.length === 2) {
+//     map[0] = keywords[0];
+//     map[Math.min(2, N - 1)] = keywords[1];
+//   } else if (keywords.length >= 4) {
+//     for (let i = 0; i < 4 && i < N; i++) map[i] = keywords[i];
+//   }
+//   out = out.map((sec, idx) => {
+//     const kw = map[idx];
+//     if (!kw) return sec;
+//     const token = `[ANCHOR:${kw}]`;
+//     return sec.replace(/<\/p>/i, ` ${token}</p>`);
+//   });
+//   return out;
+// }
+// function computeSectionKeywordMap(N: number, keywords: string[]) {
+//   const map: Record<number, string | null> = {};
+//   if (keywords.length === 1) { map[0] = keywords[0]; }
+//   else if (keywords.length === 2) { map[0] = keywords[0]; map[Math.min(2, N - 1)] = keywords[1]; }
+//   else if (keywords.length >= 4) { for (let i = 0; i < 4 && i < N; i++) map[i] = keywords[i]; }
+//   return map;
+// }
+
+// /* Find model conclusion (<h1>…</h1><p>…</p>) in chosen language */
+// function findModelConclusion(rawHtml: string, lc: LangCode) {
+//   if (!rawHtml) return "";
+//   const alts = lc === "ru"
+//     ? "(Заключение|Выводы?|Итог)"
+//     : lc === "hi"
+//       ? "(निष्कर्ष|समापन|उपसंहार)"
+//       : "(Conclusion)";
+//   const m = rawHtml.match(new RegExp(`<h1>\\s*${alts}\\s*</h1>\\s*<p>[\\s\\S]*?<\\/p>`, "i"));
+//   return m ? squashRepetition(m[0]) : "";
+// }
+
+// /* Enforce one keyword per BODY paragraph (others → plain text) */
+// function enforceSingleKeywordPerParagraph(html: string, keywords: string[], sectionMap: Record<number, string | null>) {
+//   const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+//   const blocks = html.match(/<h1>[\s\S]*?<\/h1>\s*<p>[\s\S]*?<\/p>/gi) || [];
+//   let idx = 0;
+//   let result = html;
+//   for (const block of blocks) {
+//     const allowed = sectionMap[idx++] || "";
+//     if (!allowed) continue;
+//     let replaced = block;
+
+//     for (const k of keywords) {
+//       if (k === allowed) continue;
+//       const aRe = new RegExp(`<a[^>]*>\\s*(${esc(k)})\\s*<\\/a>`, "gi");
+//       const bRe = new RegExp(`<strong>\\s*(${esc(k)})\\s*<\\/strong>`, "gi");
+//       replaced = replaced.replace(aRe, "$1").replace(bRe, "$1");
+//     }
+
+//     const allowedA = new RegExp(`<a[^>]*>\\s*(${esc(allowed)})\\s*<\\/a>`, "gi");
+//     let seen = 0;
+//     replaced = replaced.replace(allowedA, (_m, g1) => (++seen === 1 ? _m : g1));
+
+//     const allowedB = new RegExp(`<strong>\\s*(${esc(allowed)})\\s*<\\/strong>`, "gi");
+//     seen = 0;
+//     replaced = replaced.replace(allowedB, (_m, g1) => (++seen === 1 ? _m : g1));
+
+//     result = result.replace(block, replaced);
+//   }
+//   return result;
+// }
+
+// /* Validate BODY only */
+// function validateBodyHtml(
+//   html: string,
+//   keywords: string[],
+//   wantSections: number,
+//   minW: number,
+//   maxW: number
+// ) {
+//   const errors: string[] = [];
+//   const blocks = (html.match(/<h1>[\s\S]*?<\/h1>\s*<p>[\s\S]*?<\/p>/gi) || []);
+//   if (blocks.length !== wantSections) errors.push(`Body section count must be exactly ${wantSections} (found ${blocks.length}).`);
+//   const paras = (html.match(/<p>[\s\S]*?<\/p>/gi) || []);
+//   paras.forEach((p) => {
+//     const w = wordCount(stripTagsFast(p));
+//     if (w < minW || w > maxW) errors.push(`Paragraph out of range (${w} words, expected ${minW}–${maxW}).`);
+//   });
+//   for (const k of keywords.slice(0, 4)) {
+//     const cnt = (html.match(new RegExp(`\\[ANCHOR:${k.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}\\]`, "g")) || []).length;
+//     if (cnt !== 1) errors.push(`Token count for "${k}" must be exactly 1 (found ${cnt}).`);
+//   }
+//   return errors;
+// }
+
+// /* =========================
+//    Uniqueness guard (shingles + Jaccard)
+//    ========================= */
+// function shingles(text: string, n = 4): Set<string> {
+//   const words = stripTagsFast(text).toLowerCase().split(/\s+/).filter(Boolean);
+//   const set = new Set<string>();
+//   for (let i = 0; i <= words.length - n; i++) set.add(words.slice(i, i + n).join(" "));
+//   return set;
+// }
+// function jaccard(a: Set<string>, b: Set<string>) {
+//   let inter = 0;
+//   for (const x of a) if (b.has(x)) inter++;
+//   return inter / Math.max(1, a.size + b.size - inter);
+// }
+
+// /* =========================
+//    Grouping (normal vs custom)
+//    ========================= */
+// function buildGroupsNormal(rows: KeywordRow[], size: KeywordMode): KeywordRow[][] {
+//   const groups: KeywordRow[][] = [];
+//   for (let i = 0; i < rows.length; i += size) groups.push(rows.slice(i, i + size));
+//   return groups;
+// }
+// function sampleDistinct<T>(arr: T[], size: number): T[] {
+//   if (size <= 0) return [];
+//   if (arr.length === 0) return [];
+//   if (size === 1) return [arr[Math.floor(Math.random() * arr.length)]];
+//   const takenIdx = new Set<number>();
+//   let tries = 0;
+//   while (takenIdx.size < Math.min(size, arr.length) && tries < size * 8) {
+//     takenIdx.add(Math.floor(Math.random() * arr.length));
+//     tries++;
+//   }
+//   const out = Array.from(takenIdx).map(i => arr[i]);
+//   while (out.length < size) out.push(arr[Math.floor(Math.random() * arr.length)]);
+//   return out;
+// }
+// function buildGroupsCustom(rows: KeywordRow[], size: KeywordMode, count: number): KeywordRow[][] {
+//   const groups: KeywordRow[][] = [];
+//   for (let i = 0; i < count; i++) groups.push(sampleDistinct(rows, size));
+//   return groups;
+// }
+
+// /* =========================
+//    Hook
+//    ========================= */
+// export function useContentGeneration() {
+//   const [isProcessing, setIsProcessing] = useState(false);
+//   const [contentItems, setContentItems] = useLocalStorage<ContentItem[]>("content-items", []);
+//   const [excelProjects, setExcelProjects] = useLocalStorage<ExcelProject[]>("excel-projects", []);
+
+//   const ensureProject = (proj: Partial<ExcelProject> & { id: string; fileName: string }) => {
+//     setExcelProjects((prev = []) => {
+//       const exists = prev.some((p) => p.id === proj.id);
+//       const base: ExcelProject = {
+//         id: proj.id,
+//         fileName: proj.fileName,
+//         status: (proj as any).status ?? "pending",
+//         totalKeywords: (proj as any).totalKeywords ?? 0,
+//         processedKeywords: (proj as any).processedKeywords ?? 0,
+//         createdAt: (proj as any).createdAt ?? new Date().toISOString(),
+//         error: (proj as any).error,
+//         failedCount: (proj as any).failedCount ?? 0,
+//       };
+//       if (exists) return prev.map((p) => (p.id === proj.id ? { ...p, ...base } : p));
+//       return [...prev, base];
+//     });
+//   };
+
+//   const generateContent = async (file: File, fileId: string, onProgress?: GenerateProgressCallback) => {
+//     setIsProcessing(true);
+//     onProgress?.(0);
+//     ensureProject({ id: fileId, fileName: file.name, status: "pending", totalKeywords: 0, processedKeywords: 0, failedCount: 0 });
+
+//     const bufferItems: ContentItem[] = [];
+//     let flushTimer: number | null = null;
+//     const flushNow = () => {
+//       if (flushTimer != null) { clearTimeout(flushTimer as any); flushTimer = null; }
+//       if (!bufferItems.length) return;
+//       const toWrite = bufferItems.splice(0, bufferItems.length);
+//       setContentItems((prev) => [...(prev ?? []), ...toWrite]);
+//     };
+//     const scheduleFlush = () => { if (flushTimer == null) flushTimer = window.setTimeout(() => flushNow(), 160); };
+
+//     let failedCount = 0;
+//     let processedCount = 0;
+//     const updateProgress = (processed: number, total: number) => {
+//       setExcelProjects((prev) => (prev ?? []).map((p) => (p.id === fileId ? { ...p, processedKeywords: processed } : p)));
+//       try { onProgress?.(Math.round((processed / Math.max(1, total)) * 100)); } catch {}
+//     };
+
+//     try {
+//       const buffer = await file.arrayBuffer();
+//       const { keywords } = extractKeywordsFromWorkbookBufferWithUrls(buffer);
+//       if (!keywords.length) {
+//         ensureProject({ id: fileId, fileName: file.name, status: "error", error: "No valid keywords found in the uploaded Excel file" });
+//         toast.error("No valid keywords found in the uploaded Excel file.");
+//         onProgress?.(100);
+//         return;
+//       }
+
+//       const prefs = getFreshPrefs();
+//       const lc = lcOf(prefs.language);
+//       const size = (prefs.keywordMode ?? 1) as KeywordMode;
+
+//       // Build groups
+//       const baseGroups = prefs.customModeEnabled
+//         ? buildGroupsCustom(keywords, size, Math.max(1, Math.min(200, prefs.articleCount || 1)))
+//         : buildGroupsNormal(keywords, size);
+
+//       ensureProject({ id: fileId, fileName: file.name, status: "processing", totalKeywords: baseGroups.length, processedKeywords: 0, failedCount: 0 });
+//       toast.info(`Generating ${baseGroups.length} article(s) • Mode: ${size} keyword(s)/article${prefs.customModeEnabled ? " • Custom count" : ""}`);
+
+//       // Word bounds
+//       const paraMin = Math.floor((prefs.paragraphWords || 100) * 0.92);
+//       const paraMax = Math.ceil((prefs.paragraphWords || 100) * 1.10);
+//       const wantSections = prefs.sectionCount || 5;
+
+//       // Concurrency
+//       const cpu = (navigator.hardwareConcurrency ?? 4);
+//       let concurrency = clamp(Math.floor(cpu / 2), 2, 8);
+//       const MIN = 1, MAX = 8;
+
+//       // Uniqueness state
+//       const seenShingles: Set<string>[] = [];
+//       const UNIQUENESS_THRESHOLD = 0.60;
+//       const MAX_REPAIRS = 2;
+
+//       let idx = 0;
+//       const running = new Set<Promise<void>>();
+
+//       const startNext = () => {
+//         if (idx >= baseGroups.length) return;
+//         const groupIndex = idx++;
+//         const grp = baseGroups[groupIndex];
+//         const kws = grp.map((g) => g.keyword);
+//         const urlMap: Record<string, string | null> = {};
+//         grp.forEach((g) => { urlMap[g.keyword] = g.url ?? null; });
+
+//         const task = (async () => {
+//           try {
+//             const buildOnce = async (instructions: string) => {
+//               let result = await generateJSONTitleHtml({ keywords: kws, instructions });
+
+//               // BODY build
+//               let sections = ensureH1SectionsFromAnyHtml(result.html, wantSections, paraMin, paraMax, lc);
+//               sections = distributeTokensExact(sections, kws);
+//               sections = sanitizeBodySections(sections, lc);
+
+//               // MODEL CONCLUSION (optional)
+//               const modelConclusion = prefs.includeConclusion ? findModelConclusion(result.html, lc) : "";
+
+//               // Normalize BODY (pad allowed), conclusion (no pad)
+//               let bodyHtml = normalizeParagraphWordRange(sections.join(""), paraMin, paraMax, lc, true);
+//               bodyHtml = squashRepetition(bodyHtml);
+
+//               let finalHtml = bodyHtml;
+//               if (prefs.includeConclusion && modelConclusion) {
+//                 const normalizedConclusion = normalizeParagraphWordRange(modelConclusion, paraMin, paraMax, lc, false);
+//                 finalHtml += normalizedConclusion;
+//               }
+
+//               return { result, bodyHtml, finalHtml };
+//             };
+
+//             const basePlan = buildPlanFromPrefs({
+//               keywords: kws,
+//               prefs: {
+//                 ...prefs,
+//                 sectionCount: (prefs.sectionCount as any) || 5,
+//                 paragraphWords: (prefs.paragraphWords as any) || 100,
+//               },
+//               variationId: groupIndex + 1,
+//             });
+
+//             let attempt = 0;
+//             let html = "";
+//             let bodyHtml = "";
+//             let title = "";
+//             let conclusionOk = !prefs.includeConclusion;
+//             let langOk = false;
+//             let uniqueOk = false;
+
+//             while (attempt < MAX_REPAIRS + 1) {
+//               const { result, bodyHtml: bHtml, finalHtml } = await buildOnce(basePlan);
+//               title = result.title;
+//               bodyHtml = bHtml;
+//               html = finalHtml;
+
+//               // Validate BODY
+//               let errs = validateBodyHtml(bodyHtml, kws, wantSections, paraMin, paraMax);
+
+//               // Enforce language (script check)
+//               const exp = expectScript(lc);
+//               const scrBody = detectScript(bodyHtml);
+//               langOk = scrBody === exp;
+
+//               // Conclusion present when required
+//               if (prefs.includeConclusion) {
+//                 const concl = findModelConclusion(html, lc);
+//                 conclusionOk = concl.length > 0 && detectScript(concl) === exp;
+//                 if (!conclusionOk) errs.push("Conclusion missing or wrong language.");
+//               }
+
+//               // Uniqueness check vs. prior items (same run)
+//               const sig = shingles(bodyHtml);
+//               let maxSim = 0;
+//               for (const prev of seenShingles) {
+//                 maxSim = Math.max(maxSim, jaccard(sig, prev));
+//               }
+//               uniqueOk = maxSim < UNIQUENESS_THRESHOLD;
+//               if (!uniqueOk) errs.push(`Body too similar to previous output (similarity ${(maxSim*100).toFixed(0)}%).`);
+
+//               // If everything fine → break
+//               if (errs.length === 0 && langOk && conclusionOk && uniqueOk) {
+//                 // keep signature
+//                 seenShingles.push(sig);
+//                 break;
+//               }
+
+//               // Build a repair instruction
+//               const repairPlan = [
+//                 basePlan,
+//                 "",
+//                 "REWRITE STRICTLY to fix these issues:",
+//                 ...errs.map((e) => `- ${e}`),
+//                 lc === "ru"
+//                   ? `Language enforcement: write 100% in Russian (Cyrillic). No English terms or Latin script.`
+//                   : lc === "hi"
+//                     ? `Language enforcement: write 100% in Hindi (Devanagari). No English terms or Latin script.`
+//                     : `Language enforcement: write 100% in English.`,
+//                 `Uniqueness: change persona, city, constraints, sequence of points and at least 3 numeric specifics. Do NOT reuse prior sentences.`,
+//                 `Tokens: same mapping as instructed. Never put tokens in the conclusion.`,
+//                 `Return ONLY JSON with corrected "title" and "html".`,
+//               ].join("\n");
+
+//               const built = await generateJSONTitleHtml({ keywords: kws, instructions: repairPlan });
+
+//               // Re-run shaping on repaired output
+//               let sections = ensureH1SectionsFromAnyHtml(built.html, wantSections, paraMin, paraMax, lc);
+//               sections = distributeTokensExact(sections, kws);
+//               sections = sanitizeBodySections(sections, lc);
+//               bodyHtml = normalizeParagraphWordRange(sections.join(""), paraMin, paraMax, lc, true);
+//               bodyHtml = squashRepetition(bodyHtml);
+
+//               html = bodyHtml;
+//               if (prefs.includeConclusion) {
+//                 const concl = findModelConclusion(built.html, lc);
+//                 if (concl) {
+//                   const normC = normalizeParagraphWordRange(concl, paraMin, paraMax, lc, false);
+//                   html += normC;
+//                 }
+//               }
+//               title = built.title;
+
+//               // Next loop will re-check again
+//               attempt++;
+//             }
+
+//             // Link tokens
+//             const anchors = Object.keys(urlMap).map((k) => ({ keyword: k, url: urlMap[k] || undefined }));
+//             html = applyAnchorTokens(html, anchors);
+//             html = removeAllTokens(html);
+
+//             // Enforce one keyword per BODY paragraph (skip conclusion count)
+//             const bodyCount = (bodyHtml.match(/<h1>[\s\S]*?<\/h1>\s*<p>[\s\S]*?<\/p>/gi) || []).length;
+//             const secMap = computeSectionKeywordMap(bodyCount, kws);
+//             html = enforceSingleKeywordPerParagraph(html, kws, secMap);
+
+//             // Final de-stutter
+//             html = squashRepetition(html);
+
+//             const item: ContentItem = {
+//               id: `${fileId}-${groupIndex}-${Date.now()}`,
+//               keyword: kws[0],
+//               keywordsUsed: kws,
+//               generatedContent: html,
+//               fileId,
+//               fileName: file.name,
+//               createdAt: new Date().toISOString(),
+//               title,
+//               targetUrl: urlMap[kws[0]] ?? null,
+//               urlMap,
+//               status: "success",
+//               prefsSnapshot: {
+//                 mood: prefs.mood,
+//                 paragraphWords: prefs.paragraphWords,
+//                 sectionCount: prefs.sectionCount,
+//                 includeConclusion: prefs.includeConclusion,
+//                 language: prefs.language,
+//                 customModeEnabled: prefs.customModeEnabled,
+//                 articleCount: prefs.articleCount,
+//                 keywordMode: prefs.keywordMode,
+//               },
+//             };
+//             bufferItems.push(item);
+//             scheduleFlush();
+//           } catch (e) {
+//             failedCount++;
+//             console.error("group generate error:", e);
+//           } finally {
+//             processedCount += 1;
+//             updateProgress(processedCount, baseGroups.length);
+//           }
+//         })().finally(() => running.delete(task));
+
+//         running.add(task);
+//       };
+
+//       while (idx < baseGroups.length || running.size > 0) {
+//         const cur = clamp(Math.floor(concurrency), 2, 8);
+//         while (running.size < cur && idx < baseGroups.length) startNext();
+//         if (!running.size && idx >= baseGroups.length) break;
+//         await Promise.race(Array.from(running));
+//         if (failedCount > 0 && concurrency > 2) concurrency -= 0.2;
+//         else if (concurrency < MAX) concurrency += 0.1;
+//       }
+
+//       flushNow();
+//       setExcelProjects((prev) => (prev ?? []).map((p) =>
+//         p.id === fileId ? { ...p, status: "completed", processedKeywords: baseGroups.length, failedCount } : p
+//       ));
+//       const ok = baseGroups.length - failedCount;
+//       toast.success(`Finished ${file.name}: ✅ ${ok} • ❌ ${failedCount}`);
+//       onProgress?.(100);
+//     } catch (error) {
+//       console.error("generateContent overall error:", error);
+//       setExcelProjects((prev) => (prev ?? []).map((p) =>
+//         p.id === fileId ? { ...p, status: "error", error: error instanceof Error ? error.message : String(error) } : p
+//       ));
+//       toast.error(`Failed processing ${file.name}: ${error instanceof Error ? error.message : String(error)}`);
+//       onProgress?.(100);
+//       throw error;
+//     } finally {
+//       flushNow();
+//       setIsProcessing(false);
+//     }
+//   };
+
+//   const deleteProject = (projectId: string) => {
+//     setExcelProjects((prev) => (prev ?? []).filter((p) => p.id !== projectId));
+//     setContentItems((prev) => (prev ?? []).filter((c) => c.fileId !== projectId));
+//     toast.success("Project deleted");
+//   };
+
+//   const deleteAllProjects = () => {
+//     setExcelProjects([]);
+//     setContentItems([]);
+//     toast.success("All projects cleared");
+//   };
+
+//   return {
+//     generateContent,
+//     isProcessing,
+//     contentItems,
+//     setContentItems,
+//     excelProjects,
+//     setExcelProjects,
+//     deleteProject,
+//     deleteAllProjects,
+//     openContentEditor,
+//   };
+// }
+
+
+
+
+// // src/hooks/use-content.ts
+// import { useState, startTransition } from "react";
+// import { toast } from "sonner";
+// import { useLocalStorage } from "@/hooks/use-local-storage";
+// import * as XLSX from "xlsx";
+// import { generateJSONTitleHtml, applyAnchorTokens } from "@/lib/llm/api";
+// import { buildPlanFromPrefs } from "@/lib/llm/prompt-engine";
+// import type { ContentPreferences, KeywordMode } from "@/hooks/use-preferences";
+
+// /* =========================
+//    Prefs
+//    ========================= */
+// const PREF_KEY = "content-preferences_v3";
+// function getFreshPrefs(): ContentPreferences {
+//   try {
+//     const raw = localStorage.getItem(PREF_KEY);
+//     return raw ? (JSON.parse(raw) as ContentPreferences) : ({} as any);
+//   } catch { return {} as any; }
+// }
+
+// /* =========================
+//    Types & Editor opener
+//    ========================= */
+// export interface ContentItem {
+//   id: string;
+//   keyword: string;
+//   keywordsUsed?: string[];
+//   generatedContent: string;
+//   fileId: string;
+//   fileName: string;
+//   createdAt: string;
+//   title?: string;
+//   targetUrl?: string | null;
+//   urlMap?: Record<string, string | null>;
+//   status?: "success" | "failed";
+//   prefsSnapshot?: Partial<ContentPreferences>;
+// }
+// interface ExcelProject {
+//   id: string;
+//   fileName: string;
+//   status: "pending" | "processing" | "completed" | "error";
+//   totalKeywords: number;
+//   processedKeywords: number;
+//   createdAt: string;
+//   error?: string;
+//   failedCount?: number;
+// }
+// type GenerateProgressCallback = (p: number) => void;
+
+// const SESSION_KEY = "open-content-item_v1";
+// export function openContentEditor(item: ContentItem) {
+//   try {
+//     try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(item)); }
+//     catch { localStorage.setItem(`${SESSION_KEY}_fallback`, JSON.stringify(item)); }
+//     const win = window.open("/content/editor", "_blank");
+//     if (!win) toast.error("Popup blocked — allow popups to open the editor in a new tab.");
+//   } catch {
+//     try { window.location.href = "/content/editor"; } catch {}
+//   }
+// }
+
+// /* =========================
+//    Excel parsing (keywords + optional URLs)
+//    ========================= */
+// function norm(s: unknown) {
+//   return String(s ?? "").toLowerCase().replace(/[.\-_/]/g, " ").replace(/\s+/g, " ").trim();
+// }
+// function isLikelyUrlOrDomain(s?: string | null) {
+//   if (!s) return false;
+//   const t = String(s).trim();
+//   if (!t) return false;
+//   if (/^https?:\/\//i.test(t)) return true;
+//   if (/^www\./i.test(t)) return true;
+//   if (/^[a-z0-9\-]+(\.[a-z0-9\-]+)+$/i.test(t) && !/\s/.test(t)) return true;
+//   return false;
+// }
+// function sanitizeKeyword(raw: unknown): string {
+//   if (raw == null) return "";
+//   let v = String(raw).replace(/\u00A0/g, " ").trim();
+//   if (!v) return "";
+//   v = v.replace(/^\(?\s*\d+[\.\):-]?\s*/u, "").trim();
+//   v = v.replace(/^[\u2022\-\*]\s*/, "").trim();
+//   if (/^[\d\.,\s]+$/.test(v)) return "";
+//   if (isLikelyUrlOrDomain(v)) return "";
+//   if ((v.match(/[A-Za-z\u00C0-\u024F\u0400-\u04FF\u0900-\u097F]/g) || []).length < 2) return "";
+//   v = v.replace(/^[\W_]+|[\W_]+$/g, "").trim();
+//   if (v.length < 2 || v.length > 180) return "";
+//   return v;
+// }
+// type KeywordRow = { keyword: string; url?: string | null };
+
+// const KW_HEADERS = new Set(["keyword","keywords","focus keyword","search term","term","query","topic","title","key word"]);
+// const URL_HEADERS = new Set(["url","link","target url","target","target page","landing page","page url","destination","href","target link"]);
+
+// function detectHeaderRowAndColumns(rows: unknown[][]) {
+//   let headerRowIndex = -1;
+//   const maxCheck = Math.min(rows.length, 6);
+//   for (let i = 0; i < maxCheck; i++) {
+//     const r = rows[i];
+//     if (!Array.isArray(r)) continue;
+//     const nonEmpty = r.filter((c) => String(c ?? "").trim().length > 0);
+//     const mostlyText = nonEmpty.filter((c) => /[A-Za-zА-Яа-яЁё\u0900-\u097F]/.test(String(c))).length >= Math.ceil(nonEmpty.length * 0.5);
+//     if (nonEmpty.length >= 2 && mostlyText) { headerRowIndex = i; break; }
+//   }
+//   if (headerRowIndex === -1) headerRowIndex = 0;
+
+//   const headers = (rows[headerRowIndex] as unknown[]).map(norm);
+//   let keywordCol = -1, urlCol = -1;
+//   headers.forEach((h, idx) => {
+//     if (keywordCol === -1 && KW_HEADERS.has(h)) keywordCol = idx;
+//     if (urlCol === -1 && URL_HEADERS.has(h)) urlCol = idx;
+//   });
+
+//   if (keywordCol === -1) {
+//     const lookahead = rows.slice(headerRowIndex + 1, headerRowIndex + 201);
+//     const maxCols = Math.max(...rows.map((r) => (Array.isArray(r) ? r.length : 0)), 0);
+//     let bestCol = -1, bestScore = 0;
+//     for (let c = 0; c < maxCols; c++) {
+//       let score = 0, checks = 0;
+//       for (const rr of lookahead) {
+//         if (!Array.isArray(rr)) continue;
+//         const s = sanitizeKeyword(rr[c]);
+//         if (s) score++;
+//         if (rr[c] !== undefined && rr[c] !== null && String(rr[c]).trim() !== "") checks++;
+//       }
+//       if (checks === 0) continue;
+//       const weighted = score * 100 + Math.min(checks, 100);
+//       if (weighted > bestScore) { bestScore = weighted; bestCol = c; }
+//     }
+//     if (bestCol !== -1) keywordCol = bestCol;
+//   }
+//   return { headerRowIndex, keywordCol: keywordCol === -1 ? null : keywordCol, urlCol: urlCol === -1 ? null : urlCol };
+// }
+
+// function extractKeywordsFromWorksheetWithUrls(worksheet: XLSX.WorkSheet): KeywordRow[] {
+//   const rows = XLSX.utils.sheet_to_json<unknown[]>(worksheet, { header: 1, raw: true }) as unknown[][];
+//   if (!rows || rows.length === 0) return [];
+//   const { headerRowIndex, keywordCol, urlCol } = detectHeaderRowAndColumns(rows);
+//   const start = Math.min(rows.length - 1, headerRowIndex + 1);
+//   const dataRows = rows.slice(start);
+//   const maxCols = Math.max(...rows.map((r) => (Array.isArray(r) ? r.length : 0)), 0);
+
+//   const out: KeywordRow[] = [];
+//   const seen = new Set<string>();
+
+//   for (const r of dataRows) {
+//     if (!Array.isArray(r)) continue;
+
+//     let k = "";
+//     if (keywordCol != null) k = sanitizeKeyword(r[keywordCol]);
+//     if (!k) {
+//       for (let c = 0; c < maxCols; c++) {
+//         const cand = sanitizeKeyword(r[c]);
+//         if (cand) { k = cand; break; }
+//       }
+//     }
+//     if (!k || seen.has(k)) continue;
+
+//     let url: string | null = null;
+//     if (urlCol != null) {
+//       const raw = String(r[urlCol] ?? "").trim();
+//       if (raw && isLikelyUrlOrDomain(raw)) url = /^https?:\/\//i.test(raw) ? raw : "https://" + raw;
+//     }
+//     if (!url) {
+//       for (let offset = -3; offset <= 3; offset++) {
+//         if (offset === 0) continue;
+//         const idx = (keywordCol ?? 0) + offset;
+//         if (idx < 0 || idx >= maxCols) continue;
+//         const maybe = r[idx];
+//         if (!maybe) continue;
+//         const s = String(maybe).trim();
+//         if (isLikelyUrlOrDomain(s)) { url = /^https?:\/\//i.test(s) ? s : "https://" + s; break; }
+//       }
+//     }
+//     out.push({ keyword: k, url });
+//     seen.add(k);
+//   }
+//   return out;
+// }
+
+// function extractKeywordsFromWorkbookBufferWithUrls(buffer: ArrayBuffer | Uint8Array) {
+//   const workbook = XLSX.read(buffer, { type: "array" });
+//   const sheetNames = workbook.SheetNames ?? [];
+//   const combined: KeywordRow[] = [];
+//   const seen = new Set<string>();
+//   for (const sheetName of sheetNames) {
+//     try {
+//       const sheet = workbook.Sheets[sheetName];
+//       const ks = extractKeywordsFromWorksheetWithUrls(sheet);
+//       for (const k of ks) if (!seen.has(k.keyword)) { seen.add(k.keyword); combined.push(k); }
+//       if (combined.length > 10000) break;
+//     } catch (e) {
+//       console.warn("worksheet parse failed:", sheetName, e);
+//     }
+//   }
+//   return { keywords: combined };
+// }
+
+// /* =========================
+//    Language helpers
+//    ========================= */
+// type LangCode = "en" | "hi" | "ru";
+// function lcOf(pref?: string): LangCode {
+//   const t = (pref || "").toLowerCase();
+//   if (t.includes("hi") || t.includes("hindi") || t.includes("हिंदी")) return "hi";
+//   if (t.includes("ru") || t.includes("russian") || t.includes("рус")) return "ru";
+//   return "en";
+// }
+// function conclusionHead(lc: LangCode): string {
+//   return lc === "ru" ? "Заключение" : lc === "hi" ? "निष्कर्ष" : "Conclusion";
+// }
+// function stripTagsFast(html: string) {
+//   return (html || "")
+//     .replace(/<script[\s\S]*?<\/script>/gi, " ")
+//     .replace(/<style[\s\S]*?<\/style>/gi, " ")
+//     .replace(/<\/?[^>]+>/g, " ")
+//     .replace(/&nbsp;|&#160;/g, " ")
+//     .replace(/\s+/g, " ").trim();
+// }
+// function wordCount(s: string) {
+//   const t = (s || "").replace(/\s+/g, " ").trim();
+//   if (!t) return 0;
+//   return t.split(/\s+/).filter(Boolean).length;
+// }
+// function clamp(n: number, min: number, max: number) { return Math.max(min, Math.min(max, n)); }
+
+// /* =========================
+//    De-robotize / repetition
+//    ========================= */
+// function squashRepetition(text: string): string {
+//   let out = text.replace(/(\b([a-z\u0400-\u04ff\u0900-\u097f]{2,})\b\.?)(\s+\1){2,}/gi, (_m, a) => `${a} ${a}`);
+//   out = out.replace(/(\b[^\s<>{}]+\b(?:\s+\b[^\s<>{}]+\b){0,2})([.!?])?(?:\s+\1\2?){2,}/gi, (_m, a, p = "") => `${a}${p} ${a}${p}`);
+//   out = out.replace(/(?:\s*\bforward\.\b){2,}\s*$/gi, "");
+//   return out;
+// }
+
+// /* =========================
+//    H1/P extraction & shaping
+//    ========================= */
+// function extractH1PSections(html: string) {
+//   const out: { h: string; p: string }[] = [];
+//   if (!html) return out;
+//   const cleaned = html.replace(/\bundefined\b/gi, "");
+//   const h1Matches = cleaned.match(/<h1>[\s\S]*?<\/h1>/gi) || [];
+//   let cursor = 0;
+//   for (let i = 0; i < h1Matches.length; i++) {
+//     const h = h1Matches[i];
+//     const idx = cleaned.indexOf(h, cursor);
+//     if (idx === -1) continue;
+//     cursor = idx + h.length;
+//     const pMatch = cleaned.slice(cursor).match(/<p>[\s\S]*?<\/p>/i);
+//     const p = pMatch ? pMatch[0] : "";
+//     if (p) { out.push({ h, p }); cursor += p.length; }
+//   }
+//   return out;
+// }
+
+// function ensureH1SectionsFromAnyHtml(rawHtml: string, wantSections: number, paraMin: number, paraMax: number, lc: LangCode) {
+//   const pairs = extractH1PSections(rawHtml);
+//   if (pairs.length >= wantSections) {
+//     return pairs.slice(0, wantSections).map(({ h, p }) => `${h}${p}`);
+//   }
+//   const cleaned = rawHtml.replace(/```[\s\S]*?```/g, " ").replace(/\bundefined\b/gi, " ").replace(/\[ANCHOR:[^\]]+\]/g, " ");
+//   const words = stripTagsFast(squashRepetition(cleaned)).split(/\s+/).filter(Boolean);
+//   const sections: string[] = [];
+//   let idx = 0;
+//   const BANK = lc === "ru"
+//     ? ["Почему это важно","Полезные особенности","Что проверить заранее","Типичные ошибки и решения","Практические советы","Как закрепить результат"]
+//     : lc === "hi"
+//       ? ["क्यों यह महत्वपूर्ण है","मदद करने वाली मुख्य बातें","समय बचाने वाले जाँच-बिंदु","सामान्य गलतियाँ और उपाय","व्यावहारिक सुझाव","सीख को स्थायी बनाएं"]
+//       : ["Why This Matters","Core Features That Help","Checks That Save Time","Common Pitfalls & Fixes","Real-World Tips","Make It Stick"];
+
+//   for (let s = 0; s < wantSections; s++) {
+//     let take = paraMin + Math.floor(Math.random() * (paraMax - paraMin + 1));
+//     if (idx + take > words.length) take = Math.min(paraMax, Math.max(paraMin, words.length - idx));
+//     if (take <= 0) { idx = 0; take = Math.min(paraMax, Math.max(paraMin, words.length)); }
+//     const chunk = words.slice(idx, idx + take).join(" ").trim();
+//     const h1 = BANK[s % BANK.length];
+//     sections.push(`<h1>${h1}</h1><p>${chunk}</p>`);
+//     idx += take;
+//   }
+//   return sections;
+// }
+
+// function removeAllTokens(s: string) { return s.replace(/\[ANCHOR:[^\]]+\]/g, ""); }
+
+// /* =========================
+//    Keyword enforcement helpers
+//    ========================= */
+// function computeSectionKeywordMap(N: number, keywords: string[]) {
+//   const map: Record<number, string | null> = {};
+//   if (keywords.length === 1) { map[0] = keywords[0]; }
+//   else if (keywords.length === 2) { map[0] = keywords[0]; map[Math.min(2, N - 1)] = keywords[1]; }
+//   else if (keywords.length >= 4) { for (let i = 0; i < 4 && i < N; i++) map[i] = keywords[i]; }
+//   return map;
+// }
+
+// function enforceSingleKeywordPerParagraph(html: string, keywords: string[], sectionMap: Record<number, string | null>) {
+//   const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+//   const blocks = html.match(/<h1>[\s\S]*?<\/h1>\s*<p>[\s\S]*?<\/p>/gi) || [];
+//   let idx = 0;
+//   let result = html;
+//   for (const block of blocks) {
+//     const allowed = sectionMap[idx++] || "";
+//     if (!allowed) continue;
+//     let replaced = block;
+
+//     for (const k of keywords) {
+//       if (k === allowed) continue;
+//       const aRe = new RegExp(`<a[^>]*>\\s*(${esc(k)})\\s*<\\/a>`, "gi");
+//       const bRe = new RegExp(`<strong>\\s*(${esc(k)})\\s*<\\/strong>`, "gi");
+//       replaced = replaced.replace(aRe, "$1").replace(bRe, "$1");
+//     }
+
+//     const allowedA = new RegExp(`<a[^>]*>\\s*(${esc(allowed)})\\s*<\\/a>`, "gi");
+//     let seen = 0;
+//     replaced = replaced.replace(allowedA, (_m, g1) => (++seen === 1 ? _m : g1));
+
+//     const allowedB = new RegExp(`<strong>\\s*(${esc(allowed)})\\s*<\\/strong>`, "gi");
+//     seen = 0;
+//     replaced = replaced.replace(allowedB, (_m, g1) => (++seen === 1 ? _m : g1));
+
+//     result = result.replace(block, replaced);
+//   }
+//   return result;
+// }
+
+// /** Make sure no paragraph OR last sentence ends with the exact keyword. */
+// function ensureNoTerminalKeyword(html: string, keywords: string[], lc: LangCode) {
+//   const tails = lc === "ru"
+//     ? ["как правило", "на практике", "для большинства проектов", "в итоге"]
+//     : lc === "hi"
+//       ? ["अक्सर", "व्यवहार में", "अधिकतर मामलों में", "आमतौर पर"]
+//       : ["in practice", "for most teams", "in real use", "overall"];
+
+//   const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+//   const paragraphs = html.match(/<p>[\s\S]*?<\/p>/gi) || [];
+//   let out = html;
+
+//   for (const pHtml of paragraphs) {
+//     const inner = pHtml.replace(/^<p>|<\/p>$/gi, "");
+//     const trimmed = inner.replace(/\s+/g, " ").trim();
+
+//     // If ends with ...>keyword</a></p> OR ...keyword</p> OR ...<strong>keyword</strong></p>
+//     let needsTail = false;
+//     for (const kw of keywords) {
+//       const endPlain = new RegExp(`${esc(kw)}\\s*(?:[.!?…]*)\\s*$`, "i");
+//       const endAnchor = new RegExp(`>\\s*${esc(kw)}\\s*<\\/a>\\s*(?:[.!?…]*)\\s*$`, "i");
+//       const endStrong = new RegExp(`>\\s*${esc(kw)}\\s*<\\/strong>\\s*(?:[.!?…]*)\\s*$`, "i");
+//       if (endPlain.test(trimmed) || endAnchor.test(trimmed) || endStrong.test(trimmed)) { needsTail = true; break; }
+//     }
+
+//     if (!needsTail) continue;
+
+//     const tail = tails[Math.floor(Math.random() * tails.length)];
+//     const fixed = trimmed.replace(/\s*(?:[.!?…]*)\s*$/, `, ${tail}.`);
+//     const newP = `<p>${fixed}</p>`;
+//     out = out.replace(pHtml, newP);
+//   }
+//   return out;
+// }
+
+// /* =========================
+//    Validation
+//    ========================= */
+// function validateBodyHtml(html: string, keywords: string[], wantSections: number, minW: number, maxW: number) {
+//   const errors: string[] = [];
+//   const blocks = (html.match(/<h1>[\s\S]*?<\/h1>\s*<p>[\s\S]*?<\/p>/gi) || []);
+//   if (blocks.length !== wantSections) errors.push(`Body section count must be exactly ${wantSections} (found ${blocks.length}).`);
+//   const paras = (html.match(/<p>[\s\S]*?<\/p>/gi) || []);
+//   paras.forEach((p) => {
+//     const w = wordCount(stripTagsFast(p));
+//     if (w < minW || w > maxW) errors.push(`Paragraph out of range (${w} words, expected ${minW}–${maxW}).`);
+//   });
+//   for (const k of keywords.slice(0, 4)) {
+//     const cnt = (html.match(new RegExp(`\\[ANCHOR:${k.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}\\]`, "g")) || []).length;
+//     if (cnt !== 1) errors.push(`Token count for "${k}" must be exactly 1 (found ${cnt}).`);
+//   }
+//   return errors;
+// }
+
+// /* =========================
+//    Uniqueness guard
+//    ========================= */
+// function shingles(text: string, n = 4): Set<string> {
+//   const words = stripTagsFast(text).toLowerCase().split(/\s+/).filter(Boolean);
+//   const set = new Set<string>();
+//   for (let i = 0; i <= words.length - n; i++) set.add(words.slice(i, i + n).join(" "));
+//   return set;
+// }
+// function jaccard(a: Set<string>, b: Set<string>) {
+//   let inter = 0;
+//   for (const x of a) if (b.has(x)) inter++;
+//   return inter / Math.max(1, a.size + b.size - inter);
+// }
+
+// /* =========================
+//    Grouping
+//    ========================= */
+// function buildGroupsNormal(rows: KeywordRow[], size: KeywordMode): KeywordRow[][] {
+//   const groups: KeywordRow[][] = [];
+//   for (let i = 0; i < rows.length; i += size) groups.push(rows.slice(i, i + size));
+//   return groups;
+// }
+// function sampleDistinct<T>(arr: T[], size: number): T[] {
+//   if (size <= 0) return [];
+//   if (arr.length === 0) return [];
+//   if (size === 1) return [arr[Math.floor(Math.random() * arr.length)]];
+//   const takenIdx = new Set<number>();
+//   let tries = 0;
+//   while (takenIdx.size < Math.min(size, arr.length) && tries < size * 8) {
+//     takenIdx.add(Math.floor(Math.random() * arr.length));
+//     tries++;
+//   }
+//   const out = Array.from(takenIdx).map(i => arr[i]);
+//   while (out.length < size) out.push(arr[Math.floor(Math.random() * arr.length)]);
+//   return out;
+// }
+// function buildGroupsCustom(rows: KeywordRow[], size: KeywordMode, count: number): KeywordRow[][] {
+//   const groups: KeywordRow[][] = [];
+//   for (let i = 0; i < count; i++) groups.push(sampleDistinct(rows, size));
+//   return groups;
+// }
+
+// /* =========================
+//    Hook
+//    ========================= */
+// export function useContentGeneration() {
+//   const [isProcessing, setIsProcessing] = useState(false);
+//   const [contentItems, setContentItems] = useLocalStorage<ContentItem[]>("content-items", []);
+//   const [excelProjects, setExcelProjects] = useLocalStorage<ExcelProject[]>("excel-projects", []);
+
+//   const ensureProject = (proj: Partial<ExcelProject> & { id: string; fileName: string }) => {
+//     startTransition(() => {
+//       setExcelProjects((prev = []) => {
+//         const exists = prev.some((p) => p.id === proj.id);
+//         const base: ExcelProject = {
+//           id: proj.id,
+//           fileName: proj.fileName,
+//           status: (proj as any).status ?? "pending",
+//           totalKeywords: (proj as any).totalKeywords ?? 0,
+//           processedKeywords: (proj as any).processedKeywords ?? 0,
+//           createdAt: (proj as any).createdAt ?? new Date().toISOString(),
+//           error: (proj as any).error,
+//           failedCount: (proj as any).failedCount ?? 0,
+//         };
+//         if (exists) return prev.map((p) => (p.id === proj.id ? { ...p, ...base } : p));
+//         return [...prev, base];
+//       });
+//     });
+//   };
+
+//   const generateContent = async (file: File, fileId: string, onProgress?: GenerateProgressCallback) => {
+//     setIsProcessing(true);
+//     onProgress?.(0);
+//     ensureProject({ id: fileId, fileName: file.name, status: "pending", totalKeywords: 0, processedKeywords: 0, failedCount: 0 });
+
+//     // micro-batched writes (faster than setTimeout)
+//     const bufferItems: ContentItem[] = [];
+//     let scheduled = false;
+//     const BATCH_SIZE = 12;
+//     const flushNow = () => {
+//       scheduled = false;
+//       if (!bufferItems.length) return;
+//       const toWrite = bufferItems.splice(0, bufferItems.length);
+//       startTransition(() => {
+//         setContentItems((prev) => [...(prev ?? []), ...toWrite]);
+//       });
+//     };
+//     const scheduleFlush = () => {
+//       if (bufferItems.length >= BATCH_SIZE) return flushNow();
+//       if (!scheduled) { scheduled = true; queueMicrotask(flushNow); }
+//     };
+
+//     let failedCount = 0;
+//     let processedCount = 0;
+//     const updateProgress = (processed: number, total: number) => {
+//       startTransition(() => {
+//         setExcelProjects((prev) => (prev ?? []).map((p) => (p.id === fileId ? { ...p, processedKeywords: processed } : p)));
+//       });
+//       try { onProgress?.(Math.round((processed / Math.max(1, total)) * 100)); } catch {}
+//     };
+
+//     try {
+//       const buffer = await file.arrayBuffer();
+//       const { keywords } = extractKeywordsFromWorkbookBufferWithUrls(buffer);
+//       if (!keywords.length) {
+//         ensureProject({ id: fileId, fileName: file.name, status: "error", error: "No valid keywords found in the uploaded Excel file" });
+//         toast.error("No valid keywords found in the uploaded Excel file.");
+//         onProgress?.(100);
+//         return;
+//       }
+
+//       const prefs = getFreshPrefs();
+//       const lc = lcOf(prefs.language);
+//       const size = (prefs.keywordMode ?? 1) as KeywordMode;
+
+//       const baseGroups = prefs.customModeEnabled
+//         ? buildGroupsCustom(keywords, size, Math.max(1, Math.min(200, prefs.articleCount || 1)))
+//         : buildGroupsNormal(keywords, size);
+
+//       ensureProject({ id: fileId, fileName: file.name, status: "processing", totalKeywords: baseGroups.length, processedKeywords: 0, failedCount: 0 });
+//       toast.info(`Generating ${baseGroups.length} article(s) • Mode: ${size} keyword(s)/article${prefs.customModeEnabled ? " • Custom count" : ""}`);
+
+//       // Word bounds
+//       const paraMin = Math.floor((prefs.paragraphWords || 100) * 0.92);
+//       const paraMax = Math.ceil((prefs.paragraphWords || 100) * 1.10);
+//       const wantSections = prefs.sectionCount || 5;
+
+//       // Concurrency (adaptive)
+//       const cpu = (navigator.hardwareConcurrency ?? 4);
+//       let concurrency = clamp(Math.floor(cpu / 2) + 1, 2, 8);
+//       const MAX = 8;
+
+//       // Uniqueness state
+//       const seenShingles: Set<string>[] = [];
+//       const UNIQUENESS_THRESHOLD = 0.55; // a bit stricter
+//       const MAX_REPAIRS = 2;
+
+//       let idx = 0;
+//       const running = new Set<Promise<void>>();
+
+//       const startNext = () => {
+//         if (idx >= baseGroups.length) return;
+//         const groupIndex = idx++;
+//         const grp = baseGroups[groupIndex];
+//         const kws = grp.map((g) => g.keyword);
+//         const urlMap: Record<string, string | null> = {};
+//         grp.forEach((g) => { urlMap[g.keyword] = g.url ?? null; });
+
+//         const task = (async () => {
+//           try {
+//             const basePlan = buildPlanFromPrefs({
+//               keywords: kws,
+//               prefs: {
+//                 ...prefs,
+//                 sectionCount: (prefs.sectionCount as any) || 5,
+//                 paragraphWords: (prefs.paragraphWords as any) || 100,
+//               },
+//               variationId: groupIndex + 1,
+//             });
+
+//             const buildOnce = async (instructions: string) => {
+//               const result = await generateJSONTitleHtml({ keywords: kws, instructions });
+
+//               // BODY build
+//               let sections = ensureH1SectionsFromAnyHtml(result.html, wantSections, paraMin, paraMax, lc);
+//               // Put tokens into exact sections
+//               sections = sections.map((s, i) => {
+//                 const kw = kws[i] ?? null;
+//                 if (!kw) return s;
+//                 return s.replace(/<\/p>/i, ` [ANCHOR:${kw}]</p>`);
+//               });
+
+//               let bodyHtml = sections.join("");
+//               bodyHtml = squashRepetition(bodyHtml);
+
+//               // Result html may contain a model-generated conclusion — we reconstruct ourselves later if requested
+//               return { result, bodyHtml };
+//             };
+
+//             let attempt = 0;
+//             let bodyHtml = "";
+//             let title = "";
+//             let html = "";
+
+//             while (attempt < MAX_REPAIRS + 1) {
+//               const { result, bodyHtml: bHtml } = await buildOnce(basePlan);
+//               title = result.title;
+//               bodyHtml = bHtml;
+
+//               // Validate BODY
+//               let errs = validateBodyHtml(bodyHtml, kws, wantSections, paraMin, paraMax);
+
+//               // Uniqueness vs prior items (same run)
+//               const sig = shingles(bodyHtml);
+//               let maxSim = 0;
+//               for (const prev of seenShingles) maxSim = Math.max(maxSim, jaccard(sig, prev));
+//               const uniqueOk = maxSim < UNIQUENESS_THRESHOLD;
+//               if (!uniqueOk) errs.push(`Body too similar to previous output (similarity ${(maxSim*100).toFixed(0)}%).`);
+
+//               if (errs.length === 0 && uniqueOk) {
+//                 seenShingles.push(sig);
+//                 break;
+//               }
+
+//               const repairPlan = [
+//                 basePlan,
+//                 "",
+//                 "REWRITE STRICTLY to fix these issues:",
+//                 ...errs.map((e) => `- ${e}`),
+//                 lc === "ru"
+//                   ? `Language enforcement: write 100% in Russian (Cyrillic). No English terms or Latin script.`
+//                   : lc === "hi"
+//                     ? `Language enforcement: write 100% in Hindi (Devanagari). No English terms or Latin script.`
+//                     : `Language enforcement: write 100% in English.`,
+//                 `Uniqueness: change persona, locale, sequence, and at least 3 numeric specifics. Do NOT reuse prior sentences.`,
+//                 `Tokens: same mapping as instructed. Never put tokens in the conclusion.`,
+//                 `Return ONLY JSON with corrected "title" and "html".`,
+//               ].join("\n");
+
+//               const repaired = await generateJSONTitleHtml({ keywords: kws, instructions: repairPlan });
+//               let sections = ensureH1SectionsFromAnyHtml(repaired.html, wantSections, paraMin, paraMax, lc);
+//               sections = sections.map((s, i) => {
+//                 const kw = kws[i] ?? null;
+//                 if (!kw) return s;
+//                 return s.replace(/<\/p>/i, ` [ANCHOR:${kw}]</p>`);
+//               });
+//               bodyHtml = squashRepetition(sections.join(""));
+//               title = repaired.title;
+
+//               attempt++;
+//             }
+
+//             // Link tokens
+//             const anchors = Object.keys(urlMap).map((k) => ({ keyword: k, url: urlMap[k] || undefined }));
+//             html = applyAnchorTokens(bodyHtml, anchors);
+//             html = removeAllTokens(html);
+
+//             // Enforce one keyword per BODY paragraph
+//             const bodyCount = (bodyHtml.match(/<h1>[\s\S]*?<\/h1>\s*<p>[\s\S]*?<\/p>/gi) || []).length;
+//             const secMap = computeSectionKeywordMap(bodyCount, kws);
+//             html = enforceSingleKeywordPerParagraph(html, kws, secMap);
+
+//             // **Do not allow paragraph/line to end with a keyword**
+//             html = ensureNoTerminalKeyword(html, kws, lc);
+
+//             // Final de-stutter
+//             html = squashRepetition(html);
+
+//             const item: ContentItem = {
+//               id: `${fileId}-${groupIndex}-${Date.now()}`,
+//               keyword: kws[0],
+//               keywordsUsed: kws,
+//               generatedContent: html,
+//               fileId,
+//               fileName: file.name,
+//               createdAt: new Date().toISOString(),
+//               title,
+//               targetUrl: urlMap[kws[0]] ?? null,
+//               urlMap,
+//               status: "success",
+//               prefsSnapshot: {
+//                 mood: prefs.mood,
+//                 paragraphWords: prefs.paragraphWords,
+//                 sectionCount: prefs.sectionCount,
+//                 includeConclusion: prefs.includeConclusion,
+//                 language: prefs.language,
+//                 customModeEnabled: prefs.customModeEnabled,
+//                 articleCount: prefs.articleCount,
+//                 keywordMode: prefs.keywordMode,
+//               },
+//             };
+//             bufferItems.push(item);
+//             scheduleFlush();
+//           } catch (e) {
+//             failedCount++;
+//             console.error("group generate error:", e);
+//           } finally {
+//             processedCount += 1;
+//             updateProgress(processedCount, baseGroups.length);
+//           }
+//         })().finally(() => running.delete(task));
+
+//         running.add(task);
+//       };
+
+//       // Run queue
+//       while (idx < baseGroups.length || running.size > 0) {
+//         const cur = clamp(Math.floor(concurrency), 2, MAX);
+//         while (running.size < cur && idx < baseGroups.length) startNext();
+//         if (!running.size && idx >= baseGroups.length) break;
+//         await Promise.race(Array.from(running));
+//         // dynamic tuning
+//         if (failedCount > 0 && concurrency > 2) concurrency -= 0.25;
+//         else if (concurrency < MAX) concurrency += 0.1;
+//       }
+
+//       flushNow();
+//       startTransition(() => {
+//         setExcelProjects((prev) => (prev ?? []).map((p) =>
+//           p.id === fileId ? { ...p, status: "completed", processedKeywords: baseGroups.length, failedCount } : p
+//         ));
+//       });
+//       const ok = baseGroups.length - failedCount;
+//       toast.success(`Finished ${file.name}: ✅ ${ok} • ❌ ${failedCount}`);
+//       onProgress?.(100);
+//     } catch (error) {
+//       console.error("generateContent overall error:", error);
+//       startTransition(() => {
+//         setExcelProjects((prev) => (prev ?? []).map((p) =>
+//           p.id === fileId ? { ...p, status: "error", error: error instanceof Error ? error.message : String(error) } : p
+//         ));
+//       });
+//       toast.error(`Failed processing ${file.name}: ${error instanceof Error ? error.message : String(error)}`);
+//       onProgress?.(100);
+//       throw error;
+//     } finally {
+//       flushNow();
+//       setIsProcessing(false);
+//     }
+//   };
+
+//   const deleteProject = (projectId: string) => {
+//     startTransition(() => {
+//       setExcelProjects((prev) => (prev ?? []).filter((p) => p.id !== projectId));
+//       setContentItems((prev) => (prev ?? []).filter((c) => c.fileId !== projectId));
+//     });
+//     toast.success("Project deleted");
+//   };
+
+//   const deleteAllProjects = () => {
+//     startTransition(() => {
+//       setExcelProjects([]);
+//       setContentItems([]);
+//     });
+//     toast.success("All projects cleared");
+//   };
+
+//   return {
+//     generateContent,
+//     isProcessing,
+//     contentItems,
+//     setContentItems,
+//     excelProjects,
+//     setExcelProjects,
+//     deleteProject,
+//     deleteAllProjects,
+//     openContentEditor,
+//   };
+// }
+
+
+
+
+// // src/hooks/use-content.ts
+// import { useState, startTransition } from "react";
+// import { toast } from "sonner";
+// import { useLocalStorage } from "@/hooks/use-local-storage";
+// import * as XLSX from "xlsx";
+// import { generateJSONTitleHtml, applyAnchorTokens } from "@/lib/llm/api";
+// import { buildPlanFromPrefs } from "@/lib/llm/prompt-engine";
+// import type { ContentPreferences, KeywordMode } from "@/hooks/use-preferences";
+
+// /* ═══════════════════════════════════════════════════════════════
+//    SPEED OPTIMIZED + HUMANIZATION FOCUSED
+//    ═══════════════════════════════════════════════════════════════ */
+
+// const PREF_KEY = "content-preferences_v3";
+// function getFreshPrefs(): ContentPreferences {
+//   try {
+//     const raw = localStorage.getItem(PREF_KEY);
+//     return raw ? (JSON.parse(raw) as ContentPreferences) : ({} as any);
+//   } catch { return {} as any; }
+// }
+
+// export interface ContentItem {
+//   id: string;
+//   keyword: string;
+//   keywordsUsed?: string[];
+//   generatedContent: string;
+//   fileId: string;
+//   fileName: string;
+//   createdAt: string;
+//   title?: string;
+//   targetUrl?: string | null;
+//   urlMap?: Record<string, string | null>;
+//   status?: "success" | "failed";
+//   prefsSnapshot?: Partial<ContentPreferences>;
+// }
+
+// interface ExcelProject {
+//   id: string;
+//   fileName: string;
+//   status: "pending" | "processing" | "completed" | "error";
+//   totalKeywords: number;
+//   processedKeywords: number;
+//   createdAt: string;
+//   error?: string;
+//   failedCount?: number;
+// }
+
+// type GenerateProgressCallback = (p: number) => void;
+
+// const SESSION_KEY = "open-content-item_v1";
+// export function openContentEditor(item: ContentItem) {
+//   try {
+//     try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(item)); }
+//     catch { localStorage.setItem(`${SESSION_KEY}_fallback`, JSON.stringify(item)); }
+//     const win = window.open("/content/editor", "_blank");
+//     if (!win) toast.error("Popup blocked — allow popups to open the editor in a new tab.");
+//   } catch {
+//     try { window.location.href = "/content/editor"; } catch {}
+//   }
+// }
+
+// /* ═══════════════════════════════════════════════════════════════
+//    EXCEL PARSING (Keywords + URLs) - OPTIMIZED
+//    ═══════════════════════════════════════════════════════════════ */
+
+// function norm(s: unknown) {
+//   return String(s ?? "").toLowerCase().replace(/[.\-_/]/g, " ").replace(/\s+/g, " ").trim();
+// }
+
+// function isLikelyUrlOrDomain(s?: string | null) {
+//   if (!s) return false;
+//   const t = String(s).trim();
+//   if (!t) return false;
+//   if (/^https?:\/\//i.test(t)) return true;
+//   if (/^www\./i.test(t)) return true;
+//   if (/^[a-z0-9\-]+(\.[a-z0-9\-]+)+$/i.test(t) && !/\s/.test(t)) return true;
+//   return false;
+// }
+
+// function sanitizeKeyword(raw: unknown): string {
+//   if (raw == null) return "";
+//   let v = String(raw).replace(/\u00A0/g, " ").trim();
+//   if (!v) return "";
+//   v = v.replace(/^\(?\s*\d+[\.\):-]?\s*/u, "").trim();
+//   v = v.replace(/^[\u2022\-\*]\s*/, "").trim();
+//   if (/^[\d\.,\s]+$/.test(v)) return "";
+//   if (isLikelyUrlOrDomain(v)) return "";
+//   if ((v.match(/[A-Za-z\u00C0-\u024F\u0400-\u04FF\u0900-\u097F]/g) || []).length < 2) return "";
+//   v = v.replace(/^[\W_]+|[\W_]+$/g, "").trim();
+//   if (v.length < 2 || v.length > 180) return "";
+//   return v;
+// }
+
+// type KeywordRow = { keyword: string; url?: string | null };
+
+// const KW_HEADERS = new Set(["keyword","keywords","focus keyword","search term","term","query","topic","title","key word"]);
+// const URL_HEADERS = new Set(["url","link","target url","target","target page","landing page","page url","destination","href","target link"]);
+
+// function detectHeaderRowAndColumns(rows: unknown[][]) {
+//   let headerRowIndex = -1;
+//   const maxCheck = Math.min(rows.length, 6);
+//   for (let i = 0; i < maxCheck; i++) {
+//     const r = rows[i];
+//     if (!Array.isArray(r)) continue;
+//     const nonEmpty = r.filter((c) => String(c ?? "").trim().length > 0);
+//     const mostlyText = nonEmpty.filter((c) => /[A-Za-zА-Яа-яЁё\u0900-\u097F]/.test(String(c))).length >= Math.ceil(nonEmpty.length * 0.5);
+//     if (nonEmpty.length >= 2 && mostlyText) { headerRowIndex = i; break; }
+//   }
+//   if (headerRowIndex === -1) headerRowIndex = 0;
+
+//   const headers = (rows[headerRowIndex] as unknown[]).map(norm);
+//   let keywordCol = -1, urlCol = -1;
+//   headers.forEach((h, idx) => {
+//     if (keywordCol === -1 && KW_HEADERS.has(h)) keywordCol = idx;
+//     if (urlCol === -1 && URL_HEADERS.has(h)) urlCol = idx;
+//   });
+
+//   if (keywordCol === -1) {
+//     const lookahead = rows.slice(headerRowIndex + 1, headerRowIndex + 201);
+//     const maxCols = Math.max(...rows.map((r) => (Array.isArray(r) ? r.length : 0)), 0);
+//     let bestCol = -1, bestScore = 0;
+//     for (let c = 0; c < maxCols; c++) {
+//       let score = 0, checks = 0;
+//       for (const rr of lookahead) {
+//         if (!Array.isArray(rr)) continue;
+//         const s = sanitizeKeyword(rr[c]);
+//         if (s) score++;
+//         if (rr[c] !== undefined && rr[c] !== null && String(rr[c]).trim() !== "") checks++;
+//       }
+//       if (checks === 0) continue;
+//       const weighted = score * 100 + Math.min(checks, 100);
+//       if (weighted > bestScore) { bestScore = weighted; bestCol = c; }
+//     }
+//     if (bestCol !== -1) keywordCol = bestCol;
+//   }
+//   return { headerRowIndex, keywordCol: keywordCol === -1 ? null : keywordCol, urlCol: urlCol === -1 ? null : urlCol };
+// }
+
+// function extractKeywordsFromWorksheetWithUrls(worksheet: XLSX.WorkSheet): KeywordRow[] {
+//   const rows = XLSX.utils.sheet_to_json<unknown[]>(worksheet, { header: 1, raw: true }) as unknown[][];
+//   if (!rows || rows.length === 0) return [];
+//   const { headerRowIndex, keywordCol, urlCol } = detectHeaderRowAndColumns(rows);
+//   const start = Math.min(rows.length - 1, headerRowIndex + 1);
+//   const dataRows = rows.slice(start);
+//   const maxCols = Math.max(...rows.map((r) => (Array.isArray(r) ? r.length : 0)), 0);
+
+//   const out: KeywordRow[] = [];
+//   const seen = new Set<string>();
+
+//   for (const r of dataRows) {
+//     if (!Array.isArray(r)) continue;
+
+//     let k = "";
+//     if (keywordCol != null) k = sanitizeKeyword(r[keywordCol]);
+//     if (!k) {
+//       for (let c = 0; c < maxCols; c++) {
+//         const cand = sanitizeKeyword(r[c]);
+//         if (cand) { k = cand; break; }
+//       }
+//     }
+//     if (!k || seen.has(k)) continue;
+
+//     let url: string | null = null;
+//     if (urlCol != null) {
+//       const raw = String(r[urlCol] ?? "").trim();
+//       if (raw && isLikelyUrlOrDomain(raw)) url = /^https?:\/\//i.test(raw) ? raw : "https://" + raw;
+//     }
+//     if (!url) {
+//       for (let offset = -3; offset <= 3; offset++) {
+//         if (offset === 0) continue;
+//         const idx = (keywordCol ?? 0) + offset;
+//         if (idx < 0 || idx >= maxCols) continue;
+//         const maybe = r[idx];
+//         if (!maybe) continue;
+//         const s = String(maybe).trim();
+//         if (isLikelyUrlOrDomain(s)) { url = /^https?:\/\//i.test(s) ? s : "https://" + s; break; }
+//       }
+//     }
+//     out.push({ keyword: k, url });
+//     seen.add(k);
+//   }
+//   return out;
+// }
+
+// function extractKeywordsFromWorkbookBufferWithUrls(buffer: ArrayBuffer | Uint8Array) {
+//   const workbook = XLSX.read(buffer, { type: "array" });
+//   const sheetNames = workbook.SheetNames ?? [];
+//   const combined: KeywordRow[] = [];
+//   const seen = new Set<string>();
+//   for (const sheetName of sheetNames) {
+//     try {
+//       const sheet = workbook.Sheets[sheetName];
+//       const ks = extractKeywordsFromWorksheetWithUrls(sheet);
+//       for (const k of ks) if (!seen.has(k.keyword)) { seen.add(k.keyword); combined.push(k); }
+//       if (combined.length > 10000) break;
+//     } catch (e) {
+//       console.warn("worksheet parse failed:", sheetName, e);
+//     }
+//   }
+//   return { keywords: combined };
+// }
+
+// /* ═══════════════════════════════════════════════════════════════
+//    HELPERS - OPTIMIZED FOR SPEED
+//    ═══════════════════════════════════════════════════════════════ */
+
+// type LangCode = "en" | "hi" | "ru";
+// function lcOf(pref?: string): LangCode {
+//   const t = (pref || "").toLowerCase();
+//   if (t.includes("hi") || t.includes("hindi") || t.includes("हिंदी")) return "hi";
+//   if (t.includes("ru") || t.includes("russian") || t.includes("рус")) return "ru";
+//   return "en";
+// }
+
+// function stripTagsFast(html: string) {
+//   return (html || "")
+//     .replace(/<script[\s\S]*?<\/script>/gi, " ")
+//     .replace(/<style[\s\S]*?<\/style>/gi, " ")
+//     .replace(/<\/?[^>]+>/g, " ")
+//     .replace(/&nbsp;|&#160;/g, " ")
+//     .replace(/\s+/g, " ").trim();
+// }
+
+// function wordCount(s: string) {
+//   const t = (s || "").replace(/\s+/g, " ").trim();
+//   if (!t) return 0;
+//   return t.split(/\s+/).filter(Boolean).length;
+// }
+
+// function clamp(n: number, min: number, max: number) { 
+//   return Math.max(min, Math.min(max, n)); 
+// }
+
+// function squashRepetition(text: string): string {
+//   let out = text.replace(/(\b([a-z\u0400-\u04ff\u0900-\u097f]{2,})\b\.?)(\s+\1){2,}/gi, (_m, a) => `${a} ${a}`);
+//   out = out.replace(/(\b[^\s<>{}]+\b(?:\s+\b[^\s<>{}]+\b){0,2})([.!?])?(?:\s+\1\2?){2,}/gi, (_m, a, p = "") => `${a}${p} ${a}${p}`);
+//   out = out.replace(/(?:\s*\bforward\.\b){2,}\s*$/gi, "");
+//   return out;
+// }
+
+// function extractH1PSections(html: string) {
+//   const out: { h: string; p: string }[] = [];
+//   if (!html) return out;
+//   const cleaned = html.replace(/\bundefined\b/gi, "");
+//   const h1Matches = cleaned.match(/<h1>[\s\S]*?<\/h1>/gi) || [];
+//   let cursor = 0;
+//   for (let i = 0; i < h1Matches.length; i++) {
+//     const h = h1Matches[i];
+//     const idx = cleaned.indexOf(h, cursor);
+//     if (idx === -1) continue;
+//     cursor = idx + h.length;
+//     const pMatch = cleaned.slice(cursor).match(/<p>[\s\S]*?<\/p>/i);
+//     const p = pMatch ? pMatch[0] : "";
+//     if (p) { out.push({ h, p }); cursor += p.length; }
+//   }
+//   return out;
+// }
+
+// function ensureH1SectionsFromAnyHtml(rawHtml: string, wantSections: number, paraMin: number, paraMax: number, lc: LangCode) {
+//   const pairs = extractH1PSections(rawHtml);
+//   if (pairs.length >= wantSections) {
+//     return pairs.slice(0, wantSections).map(({ h, p }) => `${h}${p}`);
+//   }
+//   const cleaned = rawHtml.replace(/```[\s\S]*?```/g, " ").replace(/\bundefined\b/gi, " ").replace(/\[ANCHOR:[^\]]+\]/g, " ");
+//   const words = stripTagsFast(squashRepetition(cleaned)).split(/\s+/).filter(Boolean);
+//   const sections: string[] = [];
+//   let idx = 0;
+//   const BANK = lc === "ru"
+//     ? ["Почему это важно","Полезные особенности","Что проверить заранее","Типичные ошибки и решения","Практические советы","Как закрепить результат"]
+//     : lc === "hi"
+//       ? ["क्यों यह महत्वपूर्ण है","मदद करने वाली मुख्य बातें","समय बचाने वाले जाँच-बिंदु","सामान्य गलतियाँ और उपाय","व्यावहारिक सुझाव","सीख को स्थायी बनाएं"]
+//       : ["Why This Matters","Core Features That Help","Checks That Save Time","Common Pitfalls & Fixes","Real-World Tips","Make It Stick"];
+
+//   for (let s = 0; s < wantSections; s++) {
+//     let take = paraMin + Math.floor(Math.random() * (paraMax - paraMin + 1));
+//     if (idx + take > words.length) take = Math.min(paraMax, Math.max(paraMin, words.length - idx));
+//     if (take <= 0) { idx = 0; take = Math.min(paraMax, Math.max(paraMin, words.length)); }
+//     const chunk = words.slice(idx, idx + take).join(" ").trim();
+//     const h1 = BANK[s % BANK.length];
+//     sections.push(`<h1>${h1}</h1><p>${chunk}</p>`);
+//     idx += take;
+//   }
+//   return sections;
+// }
+
+// function removeAllTokens(s: string) { 
+//   return s.replace(/\[ANCHOR:[^\]]+\]/g, ""); 
+// }
+
+// function computeSectionKeywordMap(N: number, keywords: string[]) {
+//   const map: Record<number, string | null> = {};
+//   if (keywords.length === 1) { map[0] = keywords[0]; }
+//   else if (keywords.length === 2) { map[0] = keywords[0]; map[Math.min(2, N - 1)] = keywords[1]; }
+//   else if (keywords.length >= 4) { for (let i = 0; i < 4 && i < N; i++) map[i] = keywords[i]; }
+//   return map;
+// }
+
+// function enforceSingleKeywordPerParagraph(html: string, keywords: string[], sectionMap: Record<number, string | null>) {
+//   const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+//   const blocks = html.match(/<h1>[\s\S]*?<\/h1>\s*<p>[\s\S]*?<\/p>/gi) || [];
+//   let idx = 0;
+//   let result = html;
+//   for (const block of blocks) {
+//     const allowed = sectionMap[idx++] || "";
+//     if (!allowed) continue;
+//     let replaced = block;
+
+//     for (const k of keywords) {
+//       if (k === allowed) continue;
+//       const aRe = new RegExp(`<a[^>]*>\\s*(${esc(k)})\\s*<\\/a>`, "gi");
+//       const bRe = new RegExp(`<strong>\\s*(${esc(k)})\\s*<\\/strong>`, "gi");
+//       replaced = replaced.replace(aRe, "$1").replace(bRe, "$1");
+//     }
+
+//     const allowedA = new RegExp(`<a[^>]*>\\s*(${esc(allowed)})\\s*<\\/a>`, "gi");
+//     let seen = 0;
+//     replaced = replaced.replace(allowedA, (_m, g1) => (++seen === 1 ? _m : g1));
+
+//     const allowedB = new RegExp(`<strong>\\s*(${esc(allowed)})\\s*<\\/strong>`, "gi");
+//     seen = 0;
+//     replaced = replaced.replace(allowedB, (_m, g1) => (++seen === 1 ? _m : g1));
+
+//     result = result.replace(block, replaced);
+//   }
+//   return result;
+// }
+
+// function ensureNoTerminalKeyword(html: string, keywords: string[], lc: LangCode) {
+//   const tails = lc === "ru"
+//     ? ["как правило", "на практике", "для большинства проектов", "в итоге"]
+//     : lc === "hi"
+//       ? ["अक्सर", "व्यवहार में", "अधिकतर मामलों में", "आमतौर पर"]
+//       : ["in practice", "for most teams", "in real use", "overall"];
+
+//   const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+//   const paragraphs = html.match(/<p>[\s\S]*?<\/p>/gi) || [];
+//   let out = html;
+
+//   for (const pHtml of paragraphs) {
+//     const inner = pHtml.replace(/^<p>|<\/p>$/gi, "");
+//     const trimmed = inner.replace(/\s+/g, " ").trim();
+
+//     let needsTail = false;
+//     for (const kw of keywords) {
+//       const endPlain = new RegExp(`${esc(kw)}\\s*(?:[.!?…]*)\\s*$`, "i");
+//       const endAnchor = new RegExp(`>\\s*${esc(kw)}\\s*<\\/a>\\s*(?:[.!?…]*)\\s*$`, "i");
+//       const endStrong = new RegExp(`>\\s*${esc(kw)}\\s*<\\/strong>\\s*(?:[.!?…]*)\\s*$`, "i");
+//       if (endPlain.test(trimmed) || endAnchor.test(trimmed) || endStrong.test(trimmed)) { needsTail = true; break; }
+//     }
+
+//     if (!needsTail) continue;
+
+//     const tail = tails[Math.floor(Math.random() * tails.length)];
+//     const fixed = trimmed.replace(/\s*(?:[.!?…]*)\s*$/, `, ${tail}.`);
+//     const newP = `<p>${fixed}</p>`;
+//     out = out.replace(pHtml, newP);
+//   }
+//   return out;
+// }
+
+// function basicValidate(html: string, keywords: string[], wantSections: number) {
+//   const blocks = (html.match(/<h1>[\s\S]*?<\/h1>\s*<p>[\s\S]*?<\/p>/gi) || []).length;
+//   if (blocks < wantSections - 1) return false;
+  
+//   for (const k of keywords.slice(0, Math.min(2, keywords.length))) {
+//     if (!html.includes(k)) return false;
+//   }
+//   return true;
+// }
+// // 👇 Add near other helpers
+// function nonTokenWordCount(html: string) {
+//   const noTokens = (html || "").replace(/\[ANCHOR:[^\]]+\]/g, " ");
+//   const text = noTokens
+//     .replace(/<script[\s\S]*?<\/script>/gi, " ")
+//     .replace(/<style[\s\S]*?<\/style>/gi, " ")
+//     .replace(/<\/?[^>]+>/g, " ")
+//     .replace(/&nbsp;|&#160;/g, " ")
+//     .replace(/\s+/g, " ")
+//     .trim();
+//   return text ? text.split(/\s+/).filter(w => w.length > 1).length : 0;
+// }
+
+// // Fallback signature from api.ts ("— draft.") + weak body detection
+// function looksLikeLLMFallback(html: string) {
+//   const hasDraftMarker = /—\s*draft\./i.test(html);
+//   const h1Count = (html.match(/<h1>/gi) || []).length;
+//   const fewWords = nonTokenWordCount(html) < 50; // practically empty body
+//   return hasDraftMarker || (h1Count <= 1 && fewWords);
+// }
+
+
+// function buildGroupsNormal(rows: KeywordRow[], size: KeywordMode): KeywordRow[][] {
+//   const groups: KeywordRow[][] = [];
+//   for (let i = 0; i < rows.length; i += size) groups.push(rows.slice(i, i + size));
+//   return groups;
+// }
+
+// function sampleDistinct<T>(arr: T[], size: number): T[] {
+//   if (size <= 0) return [];
+//   if (arr.length === 0) return [];
+//   if (size === 1) return [arr[Math.floor(Math.random() * arr.length)]];
+//   const takenIdx = new Set<number>();
+//   let tries = 0;
+//   while (takenIdx.size < Math.min(size, arr.length) && tries < size * 8) {
+//     takenIdx.add(Math.floor(Math.random() * arr.length));
+//     tries++;
+//   }
+//   const out = Array.from(takenIdx).map(i => arr[i]);
+//   while (out.length < size) out.push(arr[Math.floor(Math.random() * arr.length)]);
+//   return out;
+// }
+
+// function buildGroupsCustom(rows: KeywordRow[], size: KeywordMode, count: number): KeywordRow[][] {
+//   const groups: KeywordRow[][] = [];
+//   for (let i = 0; i < count; i++) groups.push(sampleDistinct(rows, size));
+//   return groups;
+// }
+
+// /* ═══════════════════════════════════════════════════════════════
+//    MAIN HOOK - SPEED OPTIMIZED
+//    ═══════════════════════════════════════════════════════════════ */
+
+// export function useContentGeneration() {
+//   const [isProcessing, setIsProcessing] = useState(false);
+//   const [contentItems, setContentItems] = useLocalStorage<ContentItem[]>("content-items", []);
+//   const [excelProjects, setExcelProjects] = useLocalStorage<ExcelProject[]>("excel-projects", []);
+
+//   const ensureProject = (proj: Partial<ExcelProject> & { id: string; fileName: string }) => {
+//     startTransition(() => {
+//       setExcelProjects((prev = []) => {
+//         const exists = prev.some((p) => p.id === proj.id);
+//         const base: ExcelProject = {
+//           id: proj.id,
+//           fileName: proj.fileName,
+//           status: (proj as any).status ?? "pending",
+//           totalKeywords: (proj as any).totalKeywords ?? 0,
+//           processedKeywords: (proj as any).processedKeywords ?? 0,
+//           createdAt: (proj as any).createdAt ?? new Date().toISOString(),
+//           error: (proj as any).error,
+//           failedCount: (proj as any).failedCount ?? 0,
+//         };
+//         if (exists) return prev.map((p) => (p.id === proj.id ? { ...p, ...base } : p));
+//         return [...prev, base];
+//       });
+//     });
+//   };
+
+//   const generateContent = async (file: File, fileId: string, onProgress?: GenerateProgressCallback) => {
+//     setIsProcessing(true);
+//     onProgress?.(0);
+//     ensureProject({ id: fileId, fileName: file.name, status: "pending", totalKeywords: 0, processedKeywords: 0, failedCount: 0 });
+
+//     const bufferItems: ContentItem[] = [];
+//     let scheduled = false;
+//     const BATCH_SIZE = 20;
+//     const flushNow = () => {
+//       scheduled = false;
+//       if (!bufferItems.length) return;
+//       const toWrite = bufferItems.splice(0, bufferItems.length);
+//       startTransition(() => {
+//         setContentItems((prev) => [...(prev ?? []), ...toWrite]);
+//       });
+//     };
+//     const scheduleFlush = () => {
+//       if (bufferItems.length >= BATCH_SIZE) return flushNow();
+//       if (!scheduled) { scheduled = true; queueMicrotask(flushNow); }
+//     };
+
+//     let failedCount = 0;
+//     let processedCount = 0;
+//     const updateProgress = (processed: number, total: number) => {
+//       startTransition(() => {
+//         setExcelProjects((prev) => (prev ?? []).map((p) => (p.id === fileId ? { ...p, processedKeywords: processed } : p)));
+//       });
+//       try { onProgress?.(Math.round((processed / Math.max(1, total)) * 100)); } catch {}
+//     };
+
+//     try {
+//       const buffer = await file.arrayBuffer();
+//       const { keywords } = extractKeywordsFromWorkbookBufferWithUrls(buffer);
+//       if (!keywords.length) {
+//         ensureProject({ id: fileId, fileName: file.name, status: "error", error: "No valid keywords found in the uploaded Excel file" });
+//         toast.error("No valid keywords found in the uploaded Excel file.");
+//         onProgress?.(100);
+//         return;
+//       }
+
+//       const prefs = getFreshPrefs();
+//       const lc = lcOf(prefs.language);
+//       const size = (prefs.keywordMode ?? 1) as KeywordMode;
+
+//       const baseGroups = prefs.customModeEnabled
+//         ? buildGroupsCustom(keywords, size, Math.max(1, Math.min(200, prefs.articleCount || 1)))
+//         : buildGroupsNormal(keywords, size);
+
+//       ensureProject({ id: fileId, fileName: file.name, status: "processing", totalKeywords: baseGroups.length, processedKeywords: 0, failedCount: 0 });
+//       toast.info(`⚡ Generating ${baseGroups.length} article(s) • ${size} keyword(s)/article • Humanized content`);
+
+//       const paraMin = Math.floor((prefs.paragraphWords || 100) * 0.88);
+//       const paraMax = Math.ceil((prefs.paragraphWords || 100) * 1.15);
+//       const wantSections = prefs.sectionCount || 5;
+
+//       const cpu = (navigator.hardwareConcurrency ?? 4);
+//       let concurrency = clamp(Math.floor(cpu * 0.75) + 2, 3, 12);
+//       const MAX = 12;
+
+//       let idx = 0;
+//       const running = new Set<Promise<void>>();
+
+//       const startNext = () => {
+//         if (idx >= baseGroups.length) return;
+//         const groupIndex = idx++;
+//         const grp = baseGroups[groupIndex];
+//         const kws = grp.map((g) => g.keyword);
+//         const urlMap: Record<string, string | null> = {};
+//         grp.forEach((g) => { urlMap[g.keyword] = g.url ?? null; });
+
+//         const task = (async () => {
+//           try {
+//             const basePlan = buildPlanFromPrefs({
+//               keywords: kws,
+//               prefs: {
+//                 ...prefs,
+//                 sectionCount: (prefs.sectionCount as any) || 5,
+//                 paragraphWords: (prefs.paragraphWords as any) || 100,
+//               },
+//               variationId: groupIndex + 1,
+//             });
+
+//             const result = await generateJSONTitleHtml({ keywords: kws, instructions: basePlan });
+//             let title = result.title;
+
+//             let sections = ensureH1SectionsFromAnyHtml(result.html, wantSections, paraMin, paraMax, lc);
+//             sections = sections.map((s, i) => {
+//               const kw = kws[i] ?? null;
+//               if (!kw) return s;
+//               return s.replace(/<\/p>/i, ` [ANCHOR:${kw}]</p>`);
+//             });
+
+//             let bodyHtml = sections.join("");
+//             bodyHtml = squashRepetition(bodyHtml);
+
+//             if (!basicValidate(bodyHtml, kws, wantSections)) {
+//               throw new Error("Basic validation failed");
+//             }
+
+//             const anchors = Object.keys(urlMap).map((k) => ({ keyword: k, url: urlMap[k] || undefined }));
+//             let html = applyAnchorTokens(bodyHtml, anchors);
+//             html = removeAllTokens(html);
+
+//             const bodyCount = (bodyHtml.match(/<h1>[\s\S]*?<\/h1>\s*<p>[\s\S]*?<\/p>/gi) || []).length;
+//             const secMap = computeSectionKeywordMap(bodyCount, kws);
+//             html = enforceSingleKeywordPerParagraph(html, kws, secMap);
+//             html = ensureNoTerminalKeyword(html, kws, lc);
+//             html = squashRepetition(html);
+
+//             const item: ContentItem = {
+//               id: `${fileId}-${groupIndex}-${Date.now()}`,
+//               keyword: kws[0],
+//               keywordsUsed: kws,
+//               generatedContent: html,
+//               fileId,
+//               fileName: file.name,
+//               createdAt: new Date().toISOString(),
+//               title,
+//               targetUrl: urlMap[kws[0]] ?? null,
+//               urlMap,
+//               status: "success",
+//               prefsSnapshot: {
+//                 mood: prefs.mood,
+//                 paragraphWords: prefs.paragraphWords,
+//                 sectionCount: prefs.sectionCount,
+//                 includeConclusion: prefs.includeConclusion,
+//                 language: prefs.language,
+//                 customModeEnabled: prefs.customModeEnabled,
+//                 articleCount: prefs.articleCount,
+//                 keywordMode: prefs.keywordMode,
+//               },
+//             };
+//             bufferItems.push(item);
+//             scheduleFlush();
+//           } catch (e) {
+//             failedCount++;
+//             console.error("group generate error:", e);
+//           } finally {
+//             processedCount += 1;
+//             updateProgress(processedCount, baseGroups.length);
+//           }
+//         })().finally(() => running.delete(task));
+
+//         running.add(task);
+//       };
+
+//       // Main processing loop
+//       while (idx < baseGroups.length || running.size > 0) {
+//         const cur = clamp(Math.floor(concurrency), 3, MAX);
+//         while (running.size < cur && idx < baseGroups.length) startNext();
+//         if (!running.size && idx >= baseGroups.length) break;
+//         await Promise.race(Array.from(running));
+        
+//         if (failedCount > processedCount * 0.3 && concurrency > 3) concurrency -= 0.5;
+//         else if (concurrency < MAX && failedCount < processedCount * 0.1) concurrency += 0.2;
+//       }
+
+//       flushNow();
+//       startTransition(() => {
+//         setExcelProjects((prev) => (prev ?? []).map((p) =>
+//           p.id === fileId ? { ...p, status: "completed", processedKeywords: baseGroups.length, failedCount } : p
+//         ));
+//       });
+//       const ok = baseGroups.length - failedCount;
+//       toast.success(`✅ Finished ${file.name}: ${ok} articles • ${failedCount} failed`);
+//       onProgress?.(100);
+//     } catch (error) {
+//       console.error("generateContent overall error:", error);
+//       startTransition(() => {
+//         setExcelProjects((prev) => (prev ?? []).map((p) =>
+//           p.id === fileId ? { ...p, status: "error", error: error instanceof Error ? error.message : String(error) } : p
+//         ));
+//       });
+//       toast.error(`Failed processing ${file.name}: ${error instanceof Error ? error.message : String(error)}`);
+//       onProgress?.(100);
+//       throw error;
+//     } finally {
+//       flushNow();
+//       setIsProcessing(false);
+//     }
+//   };
+
+//   const deleteProject = (projectId: string) => {
+//     startTransition(() => {
+//       setExcelProjects((prev) => (prev ?? []).filter((p) => p.id !== projectId));
+//       setContentItems((prev) => (prev ?? []).filter((c) => c.fileId !== projectId));
+//     });
+//     toast.success("Project deleted");
+//   };
+
+//   const deleteAllProjects = () => {
+//     startTransition(() => {
+//       setExcelProjects([]);
+//       setContentItems([]);
+//     });
+//     toast.success("All projects cleared");
+//   };
+
+//   return {
+//     generateContent,
+//     isProcessing,
+//     contentItems,
+//     setContentItems,
+//     excelProjects,
+//     setExcelProjects,
+//     deleteProject,
+//     deleteAllProjects,
+//     openContentEditor,
+//   };
+// }
+
+
+
+
+
+
+
+// // 
+
+// // src/hooks/use-content.ts
+// import { useState, startTransition } from "react";
+// import { toast } from "sonner";
+// import { useLocalStorage } from "@/hooks/use-local-storage";
+// import * as XLSX from "xlsx";
+// import { generateJSONTitleHtml, applyAnchorTokens } from "@/lib/llm/api";
+// import { buildPlanFromPrefs } from "@/lib/llm/prompt-engine";
+// import type { ContentPreferences, KeywordMode } from "@/hooks/use-preferences";
+
+// /* ═══════════════════════════════════════════════════════════════
+//    SPEED OPTIMIZED + HUMANIZATION FOCUSED (Turbo pool-aware)
+//    ═══════════════════════════════════════════════════════════════ */
+
+// const PREF_KEY = "content-preferences_v3";
+// function getFreshPrefs(): ContentPreferences {
+//   try {
+//     const raw = localStorage.getItem(PREF_KEY);
+//     return raw ? (JSON.parse(raw) as ContentPreferences) : ({} as any);
+//   } catch { return {} as any; }
+// }
+
+// export interface ContentItem {
+//   id: string;
+//   keyword: string;
+//   keywordsUsed?: string[];
+//   generatedContent: string;
+//   fileId: string;
+//   fileName: string;
+//   createdAt: string;
+//   title?: string;
+//   targetUrl?: string | null;
+//   urlMap?: Record<string, string | null>;
+//   status?: "success" | "failed";
+//   prefsSnapshot?: Partial<ContentPreferences>;
+// }
+
+// interface ExcelProject {
+//   id: string;
+//   fileName: string;
+//   status: "pending" | "processing" | "completed" | "error";
+//   totalKeywords: number;
+//   processedKeywords: number;
+//   createdAt: string;
+//   error?: string;
+//   failedCount?: number;
+// }
+
+// type GenerateProgressCallback = (p: number) => void;
+
+// const SESSION_KEY = "open-content-item_v1";
+// export function openContentEditor(item: ContentItem) {
+//   try {
+//     try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(item)); }
+//     catch { localStorage.setItem(`${SESSION_KEY}_fallback`, JSON.stringify(item)); }
+//     const win = window.open("/content/editor", "_blank");
+//     if (!win) toast.error("Popup blocked — allow popups to open the editor in a new tab.");
+//   } catch {
+//     try { window.location.href = "/content/editor"; } catch {}
+//   }
+// }
+
+// /* ═══════════════════════════════════════════════════════════════
+//    EXCEL PARSING (Keywords + URLs)
+//    ═══════════════════════════════════════════════════════════════ */
+
+// function norm(s: unknown) {
+//   return String(s ?? "").toLowerCase().replace(/[.\-_/]/g, " ").replace(/\s+/g, " ").trim();
+// }
+// function isLikelyUrlOrDomain(s?: string | null) {
+//   if (!s) return false;
+//   const t = String(s).trim();
+//   if (!t) return false;
+//   if (/^https?:\/\//i.test(t)) return true;
+//   if (/^www\./i.test(t)) return true;
+//   if (/^[a-z0-9\-]+(\.[a-z0-9\-]+)+$/i.test(t) && !/\s/.test(t)) return true;
+//   return false;
+// }
+// function sanitizeKeyword(raw: unknown): string {
+//   if (raw == null) return "";
+//   let v = String(raw).replace(/\u00A0/g, " ").trim();
+//   if (!v) return "";
+//   v = v.replace(/^\(?\s*\d+[\.\):-]?\s*/u, "").trim();
+//   v = v.replace(/^[\u2022\-\*]\s*/, "").trim();
+//   if (/^[\d\.,\s]+$/.test(v)) return "";
+//   if (isLikelyUrlOrDomain(v)) return "";
+//   if ((v.match(/[A-Za-z\u00C0-\u024F\u0400-\u04FF\u0900-\u097F]/g) || []).length < 2) return "";
+//   v = v.replace(/^[\W_]+|[\W_]+$/g, "").trim();
+//   if (v.length < 2 || v.length > 180) return "";
+//   return v;
+// }
+
+// type KeywordRow = { keyword: string; url?: string | null };
+// const KW_HEADERS = new Set(["keyword","keywords","focus keyword","search term","term","query","topic","title","key word"]);
+// const URL_HEADERS = new Set(["url","link","target url","target","target page","landing page","page url","destination","href","target link"]);
+
+// function detectHeaderRowAndColumns(rows: unknown[][]) {
+//   let headerRowIndex = -1;
+//   const maxCheck = Math.min(rows.length, 6);
+//   for (let i = 0; i < maxCheck; i++) {
+//     const r = rows[i];
+//     if (!Array.isArray(r)) continue;
+//     const nonEmpty = r.filter((c) => String(c ?? "").trim().length > 0);
+//     const mostlyText = nonEmpty.filter((c) => /[A-Za-zА-Яа-яЁё\u0900-\u097F]/.test(String(c))).length >= Math.ceil(nonEmpty.length * 0.5);
+//     if (nonEmpty.length >= 2 && mostlyText) { headerRowIndex = i; break; }
+//   }
+//   if (headerRowIndex === -1) headerRowIndex = 0;
+
+//   const headers = (rows[headerRowIndex] as unknown[]).map(norm);
+//   let keywordCol = -1, urlCol = -1;
+//   headers.forEach((h, idx) => {
+//     if (keywordCol === -1 && KW_HEADERS.has(h)) keywordCol = idx;
+//     if (urlCol === -1 && URL_HEADERS.has(h)) urlCol = idx;
+//   });
+
+//   if (keywordCol === -1) {
+//     const lookahead = rows.slice(headerRowIndex + 1, headerRowIndex + 201);
+//     const maxCols = Math.max(...rows.map((r) => (Array.isArray(r) ? r.length : 0)), 0);
+//     let bestCol = -1, bestScore = 0;
+//     for (let c = 0; c < maxCols; c++) {
+//       let score = 0, checks = 0;
+//       for (const rr of lookahead) {
+//         if (!Array.isArray(rr)) continue;
+//         const s = sanitizeKeyword(rr[c]);
+//         if (s) score++;
+//         if (rr[c] !== undefined && rr[c] !== null && String(rr[c]).trim() !== "") checks++;
+//       }
+//       const weighted = score * 100 + Math.min(checks, 100);
+//       if (checks === 0) continue;
+//       if (weighted > bestScore) { bestScore = weighted; bestCol = c; }
+//     }
+//     if (bestCol !== -1) keywordCol = bestCol;
+//   }
+//   return { headerRowIndex, keywordCol: keywordCol === -1 ? null : keywordCol, urlCol: urlCol === -1 ? null : urlCol };
+// }
+
+// function extractKeywordsFromWorksheetWithUrls(worksheet: XLSX.WorkSheet): KeywordRow[] {
+//   const rows = XLSX.utils.sheet_to_json<unknown[]>(worksheet, { header: 1, raw: true }) as unknown[][];
+//   if (!rows || rows.length === 0) return [];
+//   const { headerRowIndex, keywordCol, urlCol } = detectHeaderRowAndColumns(rows);
+//   const start = Math.min(rows.length - 1, headerRowIndex + 1);
+//   const dataRows = rows.slice(start);
+//   const maxCols = Math.max(...rows.map((r) => (Array.isArray(r) ? r.length : 0)), 0);
+
+//   const out: KeywordRow[] = [];
+//   const seen = new Set<string>();
+
+//   for (const r of dataRows) {
+//     if (!Array.isArray(r)) continue;
+
+//     let k = "";
+//     if (keywordCol != null) k = sanitizeKeyword(r[keywordCol]);
+//     if (!k) {
+//       for (let c = 0; c < maxCols; c++) {
+//         const cand = sanitizeKeyword(r[c]);
+//         if (cand) { k = cand; break; }
+//       }
+//     }
+//     if (!k || seen.has(k)) continue;
+
+//     let url: string | null = null;
+//     if (urlCol != null) {
+//       const raw = String(r[urlCol] ?? "").trim();
+//       if (raw && isLikelyUrlOrDomain(raw)) url = /^https?:\/\//i.test(raw) ? raw : "https://" + raw;
+//     }
+//     if (!url) {
+//       for (let offset = -3; offset <= 3; offset++) {
+//         if (offset === 0) continue;
+//         const idx = (keywordCol ?? 0) + offset;
+//         if (idx < 0 || idx >= maxCols) continue;
+//         const maybe = r[idx];
+//         if (!maybe) continue;
+//         const s = String(maybe).trim();
+//         if (isLikelyUrlOrDomain(s)) { url = /^https?:\/\//i.test(s) ? s : "https://" + s; break; }
+//       }
+//     }
+//     out.push({ keyword: k, url });
+//     seen.add(k);
+//   }
+//   return out;
+// }
+
+// function extractKeywordsFromWorkbookBufferWithUrls(buffer: ArrayBuffer | Uint8Array) {
+//   const workbook = XLSX.read(buffer, { type: "array" });
+//   const sheetNames = workbook.SheetNames ?? [];
+//   const combined: KeywordRow[] = [];
+//   const seen = new Set<string>();
+//   for (const sheetName of sheetNames) {
+//     try {
+//       const sheet = workbook.Sheets[sheetName];
+//       const ks = extractKeywordsFromWorksheetWithUrls(sheet);
+//       for (const k of ks) if (!seen.has(k.keyword)) { seen.add(k.keyword); combined.push(k); }
+//       if (combined.length > 10000) break;
+//     } catch (e) {
+//       console.warn("worksheet parse failed:", sheetName, e);
+//     }
+//   }
+//   return { keywords: combined };
+// }
+
+// /* ═══════════════════════════════════════════════════════════════
+//    CONTENT SHAPING HELPERS
+//    ═══════════════════════════════════════════════════════════════ */
+
+// type LangCode = "en" | "hi" | "ru";
+// function lcOf(pref?: string): LangCode {
+//   const t = (pref || "").toLowerCase();
+//   if (t.includes("hi") || t.includes("hindi") || t.includes("हिंदी")) return "hi";
+//   if (t.includes("ru") || t.includes("russian") || t.includes("рус")) return "ru";
+//   return "en";
+// }
+// function stripTagsFast(html: string) {
+//   return (html || "")
+//     .replace(/<script[\s\S]*?<\/script>/gi, " ")
+//     .replace(/<style[\s\S]*?<\/style>/gi, " ")
+//     .replace(/<\/?[^>]+>/g, " ")
+//     .replace(/&nbsp;|&#160;/g, " ")
+//     .replace(/\s+/g, " ").trim();
+// }
+// function clamp(n: number, min: number, max: number) { return Math.max(min, Math.min(max, n)); }
+// function squashRepetition(text: string): string {
+//   let out = text.replace(/(\b([a-z\u0400-\u04ff\u0900-\u097f]{2,})\b\.?)(\s+\1){2,}/gi, (_m, a) => `${a} ${a}`);
+//   out = out.replace(/(\b[^\s<>\{}]+\b(?:\s+\b[^\s<>\{}]+\b){0,2})([.!?])?(?:\s+\1\2?){2,}/gi, (_m, a, p = "") => `${a}${p} ${a}${p}`);
+//   out = out.replace(/(?:\s*\bforward\.\b){2,}\s*$/gi, "");
+//   return out;
+// }
+// function extractH1PSections(html: string) {
+//   const out: { h: string; p: string }[] = [];
+//   if (!html) return out;
+//   const cleaned = html.replace(/\bundefined\b/gi, "");
+//   const h1Matches = cleaned.match(/<h1>[\s\S]*?<\/h1>/gi) || [];
+//   let cursor = 0;
+//   for (let i = 0; i < h1Matches.length; i++) {
+//     const h = h1Matches[i];
+//     const idx = cleaned.indexOf(h, cursor);
+//     if (idx === -1) continue;
+//     cursor = idx + h.length;
+//     const pMatch = cleaned.slice(cursor).match(/<p>[\s\S]*?<\/p>/i);
+//     const p = pMatch ? pMatch[0] : "";
+//     if (p) { out.push({ h, p }); cursor += p.length; }
+//   }
+//   return out;
+// }
+// function nonTokenWordCount(html: string) {
+//   const noTokens = (html || "").replace(/\[ANCHOR:[^\]]+\]/g, " ");
+//   const text = noTokens
+//     .replace(/<script[\s\S]*?<\/script>/gi, " ")
+//     .replace(/<style[\s\S]*?<\/style>/gi, " ")
+//     .replace(/<\/?[^>]+>/g, " ")
+//     .replace(/&nbsp;|&#160;/g, " ")
+//     .replace(/\s+/g, " ")
+//     .trim();
+//   return text ? text.split(/\s+/).filter(w => w.length > 1).length : 0;
+// }
+// function looksLikeLLMFallback(html: string) {
+//   const hasDraftMarker = /—\s*draft\./i.test(html);
+//   const h1Count = (html.match(/<h1>/gi) || []).length;
+//   const fewWords = nonTokenWordCount(html) < 50;
+//   return hasDraftMarker || (h1Count <= 1 && fewWords);
+// }
+// function ensureH1SectionsFromAnyHtml(rawHtml: string, wantSections: number, paraMin: number, paraMax: number, lc: LangCode) {
+//   const pairs = extractH1PSections(rawHtml);
+//   if (pairs.length >= wantSections) {
+//     return pairs.slice(0, wantSections).map(({ h, p }) => `${h}${p}`);
+//   }
+//   const baseWords = nonTokenWordCount(rawHtml);
+//   if (baseWords < Math.max(paraMin, 50)) {
+//     throw new Error("Insufficient body returned by LLM; refusing to fabricate sections.");
+//   }
+//   const cleaned = rawHtml.replace(/```[\s\S]*?```/g, " ").replace(/\bundefined\b/gi, " ").replace(/\[ANCHOR:[^\]]+\]/g, " ");
+//   const words = stripTagsFast(squashRepetition(cleaned)).split(/\s+/).filter(Boolean);
+//   const sections: string[] = [];
+//   let idx = 0;
+//   const BANK = lc === "ru"
+//     ? ["Почему это важно","Полезные особенности","Что проверить заранее","Типичные ошибки и решения","Практические советы","Как закрепить результат"]
+//     : lc === "hi"
+//       ? ["क्यों यह महत्वपूर्ण है","मदद करने वाली मुख्य बातें","समय बचाने वाले जाँच-बिंदु","सामान्य गलतियाँ और उपाय","व्यावहारिक सुझाव","सीख को स्थायी बनाएं"]
+//       : ["Why This Matters","Core Features That Help","Checks That Save Time","Common Pitfalls & Fixes","Real-World Tips","Make It Stick"];
+//   for (let s = 0; s < wantSections; s++) {
+//     let take = Math.floor((paraMin + paraMax) / 2);
+//     if (idx + take > words.length) take = Math.min(paraMax, Math.max(paraMin, words.length - idx));
+//     if (take <= 0) { idx = 0; take = Math.min(paraMax, Math.max(paraMin, words.length)); }
+//     const chunk = words.slice(idx, idx + take).join(" ").trim();
+//     const h1 = BANK[s % BANK.length];
+//     sections.push(`<h1>${h1}</h1><p>${chunk}</p>`);
+//     idx += take;
+//   }
+//   return sections;
+// }
+// function removeAllTokens(s: string) { return s.replace(/\[ANCHOR:[^\]]+\]/g, ""); }
+// function computeSectionKeywordMap(N: number, keywords: string[]) {
+//   const map: Record<number, string | null> = {};
+//   if (keywords.length === 1) { map[0] = keywords[0]; }
+//   else if (keywords.length === 2) { map[0] = keywords[0]; map[Math.min(2, N - 1)] = keywords[1]; }
+//   else if (keywords.length >= 4) { for (let i = 0; i < 4 && i < N; i++) map[i] = keywords[i]; }
+//   return map;
+// }
+// function enforceSingleKeywordPerParagraph(html: string, keywords: string[], sectionMap: Record<number, string | null>) {
+//   const esc = (s: string) => s.replace(/[.*+?^${}()|\[\]\\]/g, "\\$&");
+//   const blocks = html.match(/<h1>[\s\S]*?<\/h1>\s*<p>[\s\S]*?<\/p>/gi) || [];
+//   let idx = 0;
+//   let result = html;
+//   for (const block of blocks) {
+//     const allowed = sectionMap[idx++] || "";
+//     if (!allowed) continue;
+//     let replaced = block;
+
+//     for (const k of keywords) {
+//       if (k === allowed) continue;
+//       const aRe = new RegExp(`<a[^>]*>\\s*(${esc(k)})\\s*<\\/a>`, "gi");
+//       const bRe = new RegExp(`<strong>\\s*(${esc(k)})\\s*<\\/strong>`, "gi");
+//       replaced = replaced.replace(aRe, "$1").replace(bRe, "$1");
+//     }
+
+//     const allowedA = new RegExp(`<a[^>]*>\\s*(${esc(allowed)})\\s*<\\/a>`, "gi");
+//     let seen = 0;
+//     replaced = replaced.replace(allowedA, (_m, g1) => (++seen === 1 ? _m : g1));
+
+//     const allowedB = new RegExp(`<strong>\\s*(${esc(allowed)})\\s*<\\/strong>`, "gi");
+//     seen = 0;
+//     replaced = replaced.replace(allowedB, (_m, g1) => (++seen === 1 ? _m : g1));
+
+//     result = result.replace(block, replaced);
+//   }
+//   return result;
+// }
+// function ensureNoTerminalKeyword(html: string, keywords: string[], lc: LangCode) {
+//   const tails = lc === "ru"
+//     ? ["как правило", "на практике", "для большинства проектов", "в итоге"]
+//     : lc === "hi"
+//       ? ["अक्सर", "व्यवहार में", "अधिकतर मामलों में", "आम तौर पर"]
+//       : ["in practice", "for most teams", "in real use", "overall"];
+//   const esc = (s: string) => s.replace(/[.*+?^${}()|\[\]\\]/g, "\\$&");
+//   const paragraphs = html.match(/<p>[\s\S]*?<\/p>/gi) || [];
+//   let out = html;
+//   for (const pHtml of paragraphs) {
+//     const inner = pHtml.replace(/^<p>|<\/p>$/gi, "");
+//     const trimmed = inner.replace(/\s+/g, " ").trim();
+//     let needsTail = false;
+//     for (const kw of keywords) {
+//       const endPlain = new RegExp(`${esc(kw)}\\s*(?:[.!?…]*)\\s*$`, "i");
+//       const endAnchor = new RegExp(`>\\s*${esc(kw)}\\s*<\\/a>\\s*(?:[.!?…]*)\\s*$`, "i");
+//       const endStrong = new RegExp(`>\\s*${esc(kw)}\\s*<\\/strong>\\s*(?:[.!?…]*)\\s*$`, "i");
+//       if (endPlain.test(trimmed) || endAnchor.test(trimmed) || endStrong.test(trimmed)) { needsTail = true; break; }
+//     }
+//     if (!needsTail) continue;
+//     const tail = tails[Math.floor(Math.random() * tails.length)];
+//     const fixed = trimmed.replace(/\s*(?:[.!?…]*)\s*$/, `, ${tail}.`);
+//     const newP = `<p>${fixed}</p>`;
+//     out = out.replace(pHtml, newP);
+//   }
+//   return out;
+// }
+// function basicValidate(html: string, keywords: string[], wantSections: number) {
+//   if (looksLikeLLMFallback(html)) return false;
+//   const blocks = (html.match(/<h1>[\s\S]*?<\/h1>\s*<p>[\s\S]*?<\/p>/gi) || []).length;
+//   if (blocks < wantSections - 1) return false;
+//   for (const k of keywords.slice(0, Math.min(2, keywords.length))) {
+//     if (!html.includes(k)) return false;
+//   }
+//   return true;
+// }
+
+// /* ═══════════════════════════════════════════════════════════════
+//    GROUPING
+//    ═══════════════════════════════════════════════════════════════ */
+// function buildGroupsNormal(rows: KeywordRow[], size: KeywordMode): KeywordRow[][] {
+//   const groups: KeywordRow[][] = [];
+//   for (let i = 0; i < rows.length; i += size) groups.push(rows.slice(i, i + size));
+//   return groups;
+// }
+// function sampleDistinct<T>(arr: T[], size: number): T[] {
+//   if (size <= 0) return [];
+//   if (arr.length === 0) return [];
+//   if (size === 1) return [arr[Math.floor(Math.random() * arr.length)]];
+//   const takenIdx = new Set<number>();
+//   let tries = 0;
+//   while (takenIdx.size < Math.min(size, arr.length) && tries < size * 8) {
+//     takenIdx.add(Math.floor(Math.random() * arr.length));
+//     tries++;
+//   }
+//   const out = Array.from(takenIdx).map(i => arr[i]);
+//   while (out.length < size) out.push(arr[Math.floor(Math.random() * arr.length)]);
+//   return out;
+// }
+// function buildGroupsCustom(rows: KeywordRow[], size: KeywordMode, count: number): KeywordRow[][] {
+//   const groups: KeywordRow[][] = [];
+//   for (let i = 0; i < count; i++) groups.push(sampleDistinct(rows, size));
+//   return groups;
+// }
+
+// /* ═══════════════════════════════════════════════════════════════
+//    MAIN HOOK
+//    ═══════════════════════════════════════════════════════════════ */
+// export function useContentGeneration() {
+//   const [isProcessing, setIsProcessing] = useState(false);
+//   const [contentItems, setContentItems] = useLocalStorage<ContentItem[]>("content-items", []);
+//   const [excelProjects, setExcelProjects] = useLocalStorage<ExcelProject[]>("excel-projects", []);
+
+//   const ensureProject = (proj: Partial<ExcelProject> & { id: string; fileName: string }) => {
+//     startTransition(() => {
+//       setExcelProjects((prev = []) => {
+//         const exists = prev.some((p) => p.id === proj.id);
+//         const base: ExcelProject = {
+//           id: proj.id,
+//           fileName: proj.fileName,
+//           status: (proj as any).status ?? "pending",
+//           totalKeywords: (proj as any).totalKeywords ?? 0,
+//           processedKeywords: (proj as any).processedKeywords ?? 0,
+//           createdAt: (proj as any).createdAt ?? new Date().toISOString(),
+//           error: (proj as any).error,
+//           failedCount: (proj as any).failedCount ?? 0,
+//         };
+//         if (exists) return prev.map((p) => (p.id === proj.id ? { ...p, ...base } : p));
+//         return [...prev, base];
+//       });
+//     });
+//   };
+
+//   const generateContent = async (file: File, fileId: string, onProgress?: GenerateProgressCallback) => {
+//     setIsProcessing(true);
+//     onProgress?.(0);
+//     ensureProject({ id: fileId, fileName: file.name, status: "pending", totalKeywords: 0, processedKeywords: 0, failedCount: 0 });
+
+//     const bufferItems: ContentItem[] = [];
+//     let scheduled = false;
+//     const BATCH_SIZE = 20;
+//     const flushNow = () => {
+//       scheduled = false;
+//       if (!bufferItems.length) return;
+//       const toWrite = bufferItems.splice(0, bufferItems.length);
+//       startTransition(() => {
+//         setContentItems((prev) => [...(prev ?? []), ...toWrite]);
+//       });
+//     };
+//     const scheduleFlush = () => {
+//       if (bufferItems.length >= BATCH_SIZE) return flushNow();
+//       if (!scheduled) { scheduled = true; queueMicrotask(flushNow); }
+//     };
+
+//     let failedCount = 0;
+//     let processedCount = 0;
+//     const failedGroups: Array<{ index: number; grp: KeywordRow[] }> = [];
+
+//     const updateProgress = (processed: number, total: number) => {
+//       startTransition(() => {
+//         setExcelProjects((prev) => (prev ?? []).map((p) => (p.id === fileId ? { ...p, processedKeywords: processed } : p)));
+//       });
+//       try { onProgress?.(Math.round((processed / Math.max(1, total)) * 100)); } catch {}
+//     };
+
+//     try {
+//       const buffer = await file.arrayBuffer();
+//       const { keywords } = extractKeywordsFromWorkbookBufferWithUrls(buffer);
+//       if (!keywords.length) {
+//         ensureProject({ id: fileId, fileName: file.name, status: "error", error: "No valid keywords found in the uploaded Excel file" });
+//         toast.error("No valid keywords found in the uploaded Excel file.");
+//         onProgress?.(100);
+//         return;
+//       }
+
+//       const prefs = getFreshPrefs();
+//       const lc = lcOf(prefs.language);
+//       const size = (prefs.keywordMode ?? 1) as KeywordMode;
+
+//       const baseGroups = prefs.customModeEnabled
+//         ? buildGroupsCustom(keywords, size, Math.max(1, Math.min(200, prefs.articleCount || 1)))
+//         : buildGroupsNormal(keywords, size);
+
+//       ensureProject({ id: fileId, fileName: file.name, status: "processing", totalKeywords: baseGroups.length, processedKeywords: 0, failedCount: 0 });
+//       toast.info(`⚡ Generating ${baseGroups.length} article(s) • ${size} keyword(s)/article • Humanized content`);
+
+//       const paraMin = Math.floor((prefs.paragraphWords || 100) * 0.88);
+//       const paraMax = Math.ceil((prefs.paragraphWords || 100) * 1.15);
+//       const wantSections = prefs.sectionCount || 5;
+
+//       // 🚀 Turbo pool-aware concurrency (no CPU bottleneck)
+//       let concurrency = Math.min(Math.max(6, (navigator.hardwareConcurrency ?? 4) * 2), 12);
+//       const MAX = 48;
+
+//       let idx = 0;
+//       const running = new Set<Promise<void>>();
+
+//       const startNext = () => {
+//         if (idx >= baseGroups.length) return;
+//         const groupIndex = idx++;
+//         const grp = baseGroups[groupIndex];
+//         const kws = grp.map((g) => g.keyword);
+//         const urlMap: Record<string, string | null> = {};
+//         grp.forEach((g) => { urlMap[g.keyword] = g.url ?? null; });
+
+//         const task = (async () => {
+//           try {
+//             const basePlan = buildPlanFromPrefs({
+//               keywords: kws,
+//               prefs: {
+//                 ...prefs,
+//                 sectionCount: (prefs.sectionCount as any) || 5,
+//                 paragraphWords: (prefs.paragraphWords as any) || 100,
+//               },
+//               variationId: groupIndex + 1,
+//             });
+
+//             const result = await generateJSONTitleHtml({ keywords: kws, instructions: basePlan });
+
+//             // Reject stub/fallback so it retries & never leaks to UI
+//             const html0 = String(result.html || "");
+//             if (/—\s*draft\./i.test(html0) || (html0.match(/<h1>/gi) || []).length <= 1 || nonTokenWordCount(html0) < 50) {
+//               throw new Error("LLM fallback/stub detected (rate-limit or non-JSON).");
+//             }
+
+//             let sections = ensureH1SectionsFromAnyHtml(result.html, wantSections, paraMin, paraMax, lc);
+//             sections = sections.map((s, i) => (kws[i] ? s.replace(/<\/p>/i, ` [ANCHOR:${kws[i]}]</p>`) : s));
+
+//             let bodyHtml = sections.join("");
+//             bodyHtml = squashRepetition(bodyHtml);
+
+//             if (!basicValidate(bodyHtml, kws, wantSections)) {
+//               throw new Error("Basic validation failed");
+//             }
+
+//             const anchors = Object.keys(urlMap).map((k) => ({ keyword: k, url: urlMap[k] || undefined }));
+//             let html = applyAnchorTokens(bodyHtml, anchors);
+//             html = removeAllTokens(html);
+
+//             const bodyCount = (bodyHtml.match(/<h1>[\s\S]*?<\/h1>\s*<p>[\s\S]*?<\/p>/gi) || []).length;
+//             const secMap = computeSectionKeywordMap(bodyCount, kws);
+//             html = enforceSingleKeywordPerParagraph(html, kws, secMap);
+//             html = ensureNoTerminalKeyword(html, kws, lc);
+//             html = squashRepetition(html);
+
+//             const item: ContentItem = {
+//               id: `${fileId}-${groupIndex}-${Date.now()}`,
+//               keyword: kws[0],
+//               keywordsUsed: kws,
+//               generatedContent: html,
+//               fileId,
+//               fileName: file.name,
+//               createdAt: new Date().toISOString(),
+//               title: result.title,
+//               targetUrl: urlMap[kws[0]] ?? null,
+//               urlMap,
+//               status: "success",
+//               prefsSnapshot: {
+//                 mood: prefs.mood,
+//                 paragraphWords: prefs.paragraphWords,
+//                 sectionCount: prefs.sectionCount,
+//                 includeConclusion: prefs.includeConclusion,
+//                 language: prefs.language,
+//                 customModeEnabled: prefs.customModeEnabled,
+//                 articleCount: prefs.articleCount,
+//                 keywordMode: prefs.keywordMode,
+//               },
+//             };
+//             bufferItems.push(item);
+//             scheduleFlush();
+//           } catch (e) {
+//             failedCount++;
+//             failedGroups.push({ index: groupIndex, grp });
+//             console.error("group generate error:", e);
+//           } finally {
+//             processedCount += 1;
+//             updateProgress(processedCount, baseGroups.length);
+//           }
+//         })().finally(() => running.delete(task));
+
+//         running.add(task);
+//       };
+
+//       // Main loop
+//       while (idx < baseGroups.length || running.size > 0) {
+//         const cur = Math.max(6, Math.min(Math.floor(concurrency), MAX));
+//         while (running.size < cur && idx < baseGroups.length) startNext();
+//         if (!running.size && idx >= baseGroups.length) break;
+//         await Promise.race(Array.from(running));
+
+//         // Adapt concurrency to avoid 429 bursts, but keep speed
+//         if (failedCount > processedCount * 0.25 && concurrency > 6) concurrency -= 0.5;
+//         else if (concurrency < MAX && failedCount < processedCount * 0.08) concurrency += 0.3;
+//       }
+
+//       // Tail retry (low & polite)
+//       if (failedGroups.length) {
+//         toast.message(`Retrying ${failedGroups.length} failed item(s) at low speed…`);
+//         const again = [...failedGroups];
+//         failedGroups.length = 0;
+
+//         const runOne = async (grp: KeywordRow[], groupIndex: number) => {
+//           const kws = grp.map(g => g.keyword);
+//           const urlMap: Record<string, string | null> = {};
+//           grp.forEach(g => { urlMap[g.keyword] = g.url ?? null; });
+
+//           const basePlan = buildPlanFromPrefs({
+//             keywords: kws,
+//             prefs: {
+//               ...prefs,
+//               sectionCount: (prefs.sectionCount as any) || 5,
+//               paragraphWords: (prefs.paragraphWords as any) || 100,
+//             },
+//             variationId: groupIndex + 1,
+//           });
+
+//           const res = await generateJSONTitleHtml({ keywords: kws, instructions: basePlan });
+//           const html0b = String(res.html || "");
+//           if (/—\s*draft\./i.test(html0b) || (html0b.match(/<h1>/gi) || []).length <= 1 || nonTokenWordCount(html0b) < 50) {
+//             throw new Error("LLM fallback/stub on retry");
+//           }
+
+//           let sections = ensureH1SectionsFromAnyHtml(res.html, wantSections, paraMin, paraMax, lc);
+//           sections = sections.map((s, i) => (kws[i] ? s.replace(/<\/p>/i, ` [ANCHOR:${kws[i]}]</p>`) : s));
+
+//           let bodyHtml = sections.join("");
+//           bodyHtml = squashRepetition(bodyHtml);
+//           if (!basicValidate(bodyHtml, kws, wantSections)) throw new Error("Basic validation failed on retry");
+
+//           const anchors = Object.keys(urlMap).map(k => ({ keyword: k, url: urlMap[k] || undefined }));
+//           let html = applyAnchorTokens(bodyHtml, anchors);
+//           html = removeAllTokens(html);
+
+//           const bodyCount = (bodyHtml.match(/<h1>[\s\S]*?<\/h1>\s*<p>[\s\S]*?<\/p>/gi) || []).length;
+//           const secMap = computeSectionKeywordMap(bodyCount, kws);
+//           html = enforceSingleKeywordPerParagraph(html, kws, secMap);
+//           html = ensureNoTerminalKeyword(html, kws, lc);
+//           html = squashRepetition(html);
+
+//           const item: ContentItem = {
+//             id: `${fileId}-retry-${groupIndex}-${Date.now()}`,
+//             keyword: kws[0],
+//             keywordsUsed: kws,
+//             generatedContent: html,
+//             fileId,
+//             fileName: file.name,
+//             createdAt: new Date().toISOString(),
+//             title: res.title,
+//             targetUrl: urlMap[kws[0]] ?? null,
+//             urlMap,
+//             status: "success",
+//             prefsSnapshot: {
+//               mood: prefs.mood,
+//               paragraphWords: prefs.paragraphWords,
+//               sectionCount: prefs.sectionCount,
+//               includeConclusion: prefs.includeConclusion,
+//               language: prefs.language,
+//               customModeEnabled: prefs.customModeEnabled,
+//               articleCount: prefs.articleCount,
+//               keywordMode: prefs.keywordMode,
+//             },
+//           };
+//           bufferItems.push(item);
+//           scheduleFlush();
+//         };
+
+//         const RETRY_CONCURRENCY = 2;
+//         const queue = [...again];
+//         const running2 = new Set<Promise<void>>();
+
+//         const startNextRetry = () => {
+//           if (!queue.length) return;
+//           const { grp, index } = queue.shift()!;
+//           const p = (async () => {
+//             try {
+//               await runOne(grp, index);
+//             } catch (e) {
+//               console.error("retry group failed:", e);
+//             }
+//           })().finally(() => running2.delete(p));
+//           running2.add(p);
+//         };
+
+//         while (running2.size < RETRY_CONCURRENCY && queue.length) startNextRetry();
+//         while (running2.size || queue.length) {
+//           await Promise.race(Array.from(running2));
+//           while (running2.size < RETRY_CONCURRENCY && queue.length) startNextRetry();
+//           await new Promise(r => setTimeout(r, 400 + Math.random() * 400));
+//         }
+//       }
+
+//       flushNow();
+//       startTransition(() => {
+//         setExcelProjects((prev) => (prev ?? []).map((p) =>
+//           p.id === fileId ? { ...p, status: "completed", processedKeywords: baseGroups.length, failedCount } : p
+//         ));
+//       });
+//       const ok = baseGroups.length - failedCount;
+//       toast.success(`✅ Finished ${file.name}: ${ok} articles • ${failedCount} failed`);
+//       onProgress?.(100);
+//     } catch (error) {
+//       console.error("generateContent overall error:", error);
+//       startTransition(() => {
+//         setExcelProjects((prev) => (prev ?? []).map((p) =>
+//           p.id === fileId ? { ...p, status: "error", error: error instanceof Error ? error.message : String(error) } : p
+//         ));
+//       });
+//       toast.error(`Failed processing ${file.name}: ${error instanceof Error ? error.message : String(error)}`);
+//       onProgress?.(100);
+//       throw error;
+//     } finally {
+//       flushNow();
+//       setIsProcessing(false);
+//     }
+//   };
+
+//   const deleteProject = (projectId: string) => {
+//     startTransition(() => {
+//       setExcelProjects((prev) => (prev ?? []).filter((p) => p.id !== projectId));
+//       setContentItems((prev) => (prev ?? []).filter((c) => c.fileId !== projectId));
+//     });
+//     toast.success("Project deleted");
+//   };
+
+//   const deleteAllProjects = () => {
+//     startTransition(() => {
+//       setExcelProjects([]);
+//       setContentItems([]);
+//     });
+//     toast.success("All projects cleared");
+//   };
+
+//   return {
+//     generateContent,
+//     isProcessing,
+//     contentItems,
+//     setContentItems,
+//     excelProjects,
+//     setExcelProjects,
+//     deleteProject,
+//     deleteAllProjects,
+//     openContentEditor,
+//   };
+// }
+
+
+
+
+// src/hooks/use-content.ts
+import { useState, startTransition } from "react";
 import { toast } from "sonner";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import * as XLSX from "xlsx";
@@ -8982,9 +11987,10 @@ import { generateJSONTitleHtml, applyAnchorTokens } from "@/lib/llm/api";
 import { buildPlanFromPrefs } from "@/lib/llm/prompt-engine";
 import type { ContentPreferences, KeywordMode } from "@/hooks/use-preferences";
 
-/* =========================
-   Read latest saved prefs
-   ========================= */
+/* ═══════════════════════════════════════════════════════════════
+   SPEED OPTIMIZED + HUMANIZATION FOCUSED (Turbo pool-aware)
+   ═══════════════════════════════════════════════════════════════ */
+
 const PREF_KEY = "content-preferences_v3";
 function getFreshPrefs(): ContentPreferences {
   try {
@@ -8993,9 +11999,6 @@ function getFreshPrefs(): ContentPreferences {
   } catch { return {} as any; }
 }
 
-/* =========================
-   Types & Editor opener
-   ========================= */
 export interface ContentItem {
   id: string;
   keyword: string;
@@ -9010,6 +12013,7 @@ export interface ContentItem {
   status?: "success" | "failed";
   prefsSnapshot?: Partial<ContentPreferences>;
 }
+
 interface ExcelProject {
   id: string;
   fileName: string;
@@ -9020,6 +12024,7 @@ interface ExcelProject {
   error?: string;
   failedCount?: number;
 }
+
 type GenerateProgressCallback = (p: number) => void;
 
 const SESSION_KEY = "open-content-item_v1";
@@ -9034,9 +12039,10 @@ export function openContentEditor(item: ContentItem) {
   }
 }
 
-/* =========================
-   Excel parsing (keywords + optional URLs)
-   ========================= */
+/* ═══════════════════════════════════════════════════════════════
+   EXCEL PARSING (Keywords + URLs)
+   ═══════════════════════════════════════════════════════════════ */
+
 function norm(s: unknown) {
   return String(s ?? "").toLowerCase().replace(/[.\-_/]/g, " ").replace(/\s+/g, " ").trim();
 }
@@ -9062,8 +12068,8 @@ function sanitizeKeyword(raw: unknown): string {
   if (v.length < 2 || v.length > 180) return "";
   return v;
 }
-type KeywordRow = { keyword: string; url?: string | null };
 
+type KeywordRow = { keyword: string; url?: string | null };
 const KW_HEADERS = new Set(["keyword","keywords","focus keyword","search term","term","query","topic","title","key word"]);
 const URL_HEADERS = new Set(["url","link","target url","target","target page","landing page","page url","destination","href","target link"]);
 
@@ -9098,8 +12104,8 @@ function detectHeaderRowAndColumns(rows: unknown[][]) {
         if (s) score++;
         if (rr[c] !== undefined && rr[c] !== null && String(rr[c]).trim() !== "") checks++;
       }
-      if (checks === 0) continue;
       const weighted = score * 100 + Math.min(checks, 100);
+      if (checks === 0) continue;
       if (weighted > bestScore) { bestScore = weighted; bestCol = c; }
     }
     if (bestCol !== -1) keywordCol = bestCol;
@@ -9171,27 +12177,16 @@ function extractKeywordsFromWorkbookBufferWithUrls(buffer: ArrayBuffer | Uint8Ar
   return { keywords: combined };
 }
 
-/* =========================
-   Language helpers & H1 banks
-   ========================= */
+/* ═══════════════════════════════════════════════════════════════
+   CONTENT SHAPING HELPERS
+   ═══════════════════════════════════════════════════════════════ */
+
 type LangCode = "en" | "hi" | "ru";
 function lcOf(pref?: string): LangCode {
   const t = (pref || "").toLowerCase();
   if (t.includes("hi") || t.includes("hindi") || t.includes("हिंदी")) return "hi";
   if (t.includes("ru") || t.includes("russian") || t.includes("рус")) return "ru";
   return "en";
-}
-function getH1Bank(lc: LangCode): string[] {
-  if (lc === "ru") {
-    return ["Почему это важно", "Полезные особенности", "Что проверить заранее", "Типичные ошибки и решения", "Практические советы", "Как закрепить результат"];
-  }
-  if (lc === "hi") {
-    return ["क्यों यह महत्वपूर्ण है", "मदद करने वाली मुख्य बातें", "समय बचाने वाले जाँच-बिंदु", "सामान्य गलतियाँ और उपाय", "व्यावहारिक सुझाव", "सीख को स्थायी बनाएं"];
-  }
-  return ["Why This Matters","Core Features That Help","Checks That Save Time","Common Pitfalls & Fixes","Real-World Tips","Make It Stick"];
-}
-function conclusionHead(lc: LangCode): string {
-  return lc === "ru" ? "Заключение" : lc === "hi" ? "निष्कर्ष" : "Conclusion";
 }
 function stripTagsFast(html: string) {
   return (html || "")
@@ -9201,62 +12196,13 @@ function stripTagsFast(html: string) {
     .replace(/&nbsp;|&#160;/g, " ")
     .replace(/\s+/g, " ").trim();
 }
-function wordCount(s: string) {
-  const t = (s || "").replace(/\s+/g, " ").trim();
-  if (!t) return 0;
-  return t.split(/\s+/).filter(Boolean).length;
-}
 function clamp(n: number, min: number, max: number) { return Math.max(min, Math.min(max, n)); }
-function dedupeInstructionLeaks(s: string) {
-  const lines = s.split(/\n+/).map((x) => x.trim()).filter(Boolean);
-  const out: string[] = [];
-  const drop = [/^be specific and concrete/i,/^in practice, aim/i,/^focus on clarity/i,/^do not copy or paraphrase/i,/^tip:/i];
-  const seen = new Set<string>();
-  for (const ln of lines) {
-    if (drop.some((re) => re.test(ln))) continue;
-    const key = ln.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(ln);
-  }
-  return out.join("\n");
-}
-
-/* =========================
-   Repetition guard
-   ========================= */
 function squashRepetition(text: string): string {
   let out = text.replace(/(\b([a-z\u0400-\u04ff\u0900-\u097f]{2,})\b\.?)(\s+\1){2,}/gi, (_m, a) => `${a} ${a}`);
-  out = out.replace(/(\b[^\s<>{}]+\b(?:\s+\b[^\s<>{}]+\b){0,2})([.!?])?(?:\s+\1\2?){2,}/gi, (_m, a, p = "") => `${a}${p} ${a}${p}`);
+  out = out.replace(/(\b[^\s<>\{}]+\b(?:\s+\b[^\s<>\{}]+\b){0,2})([.!?])?(?:\s+\1\2?){2,}/gi, (_m, a, p = "") => `${a}${p} ${a}${p}`);
   out = out.replace(/(?:\s*\bforward\.\b){2,}\s*$/gi, "");
   return out;
 }
-
-/* =========================
-   Language detection (script-based, strong heuristic)
-   ========================= */
-type Script = "latin" | "cyrillic" | "devanagari";
-function detectScript(s: string): Script {
-  const t = stripTagsFast(s);
-  let lat = 0, cyr = 0, dev = 0;
-  for (const ch of t) {
-    const code = ch.charCodeAt(0);
-    if ((code >= 0x0041 && code <= 0x02AF) || (code >= 0x1E00 && code <= 0x1EFF)) lat++;
-    else if (code >= 0x0400 && code <= 0x04FF) cyr++;
-    else if (code >= 0x0900 && code <= 0x097F) dev++;
-  }
-  const total = lat + cyr + dev || 1;
-  if (cyr / total >= 0.6) return "cyrillic";
-  if (dev / total >= 0.6) return "devanagari";
-  return "latin";
-}
-function expectScript(lc: LangCode): Script {
-  return lc === "ru" ? "cyrillic" : lc === "hi" ? "devanagari" : "latin";
-}
-
-/* =========================
-   H1/P extraction & shaping
-   ========================= */
 function extractH1PSections(html: string) {
   const out: { h: string; p: string }[] = [];
   if (!html) return out;
@@ -9274,21 +12220,43 @@ function extractH1PSections(html: string) {
   }
   return out;
 }
-
+function nonTokenWordCount(html: string) {
+  const noTokens = (html || "").replace(/\[ANCHOR:[^\]]+\]/g, " ");
+  const text = noTokens
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<\/?[^>]+>/g, " ")
+    .replace(/&nbsp;|&#160;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text ? text.split(/\s+/).filter(w => w.length > 1).length : 0;
+}
+function looksLikeLLMFallback(html: string) {
+  const hasDraftMarker = /—\s*draft\./i.test(html);
+  const h1Count = (html.match(/<h1>/gi) || []).length;
+  const fewWords = nonTokenWordCount(html) < 50;
+  return hasDraftMarker || (h1Count <= 1 && fewWords);
+}
 function ensureH1SectionsFromAnyHtml(rawHtml: string, wantSections: number, paraMin: number, paraMax: number, lc: LangCode) {
   const pairs = extractH1PSections(rawHtml);
   if (pairs.length >= wantSections) {
     return pairs.slice(0, wantSections).map(({ h, p }) => `${h}${p}`);
   }
-  const cleaned = dedupeInstructionLeaks(
-    rawHtml.replace(/```[\s\S]*?```/g, " ").replace(/\bundefined\b/gi, " ").replace(/\[ANCHOR:[^\]]+\]/g, " ")
-  );
+  const baseWords = nonTokenWordCount(rawHtml);
+  if (baseWords < Math.max(paraMin, 50)) {
+    throw new Error("Insufficient body returned by LLM; refusing to fabricate sections.");
+  }
+  const cleaned = rawHtml.replace(/```[\s\S]*?```/g, " ").replace(/\bundefined\b/gi, " ").replace(/\[ANCHOR:[^\]]+\]/g, " ");
   const words = stripTagsFast(squashRepetition(cleaned)).split(/\s+/).filter(Boolean);
   const sections: string[] = [];
   let idx = 0;
-  const BANK = getH1Bank(lc);
+  const BANK = lc === "ru"
+    ? ["Почему это важно","Полезные особенности","Что проверить заранее","Типичные ошибки и решения","Практические советы","Как закрепить результат"]
+    : lc === "hi"
+      ? ["क्यों यह महत्वपूर्ण है","मदद करने वाली मुख्य बातें","समय बचाने वाले जाँच-बिंदु","सामान्य गलतियाँ और उपाय","व्यावहारिक सुझाव","सीख को स्थायी बनाएं"]
+      : ["Why This Matters","Core Features That Help","Checks That Save Time","Common Pitfalls & Fixes","Real-World Tips","Make It Stick"];
   for (let s = 0; s < wantSections; s++) {
-    let take = paraMin + Math.floor(Math.random() * (paraMax - paraMin + 1));
+    let take = Math.floor((paraMin + paraMax) / 2);
     if (idx + take > words.length) take = Math.min(paraMax, Math.max(paraMin, words.length - idx));
     if (take <= 0) { idx = 0; take = Math.min(paraMax, Math.max(paraMin, words.length)); }
     const chunk = words.slice(idx, idx + take).join(" ").trim();
@@ -9298,111 +12266,7 @@ function ensureH1SectionsFromAnyHtml(rawHtml: string, wantSections: number, para
   }
   return sections;
 }
-
-function fillerBank(lc: LangCode): string[] {
-  if (lc === "ru") {
-    return [
-      "Завтра пересмотрите заметки.",
-      "Сохраняйте последовательность и шаг за шагом улучшайте.",
-      "Меняйте только одну вещь за раз.",
-      "Коротко измерьте результат и двигайтесь дальше.",
-      "Стабильно поддерживайте темп.",
-    ];
-  }
-  if (lc === "hi") {
-    return [
-      "कल अपने नोट्स दोबारा देखें।",
-      "स्थिरता रखें और थोड़ा-थोड़ा सुधार करें।",
-      "एक समय में सिर्फ़ एक बदलाव पर ध्यान दें।",
-      "थोड़ा मापें और आगे बढ़ें।",
-      "गति हल्की रखें पर जारी रखें।",
-    ];
-  }
-  return [
-    "Review your notes tomorrow.",
-    "Stay consistent and iterate.",
-    "Change only one thing at a time.",
-    "Measure briefly, then move on.",
-    "Keep momentum light but steady.",
-  ];
-}
-
-function normalizeParagraphWordRange(html: string, minW: number, maxW: number, lc: LangCode, pad: boolean) {
-  const fillers = fillerBank(lc);
-  const parts: string[] = [];
-  const regex = /(<h1>[\s\S]*?<\/h1>)\s*(<p>[\s\S]*?<\/p>)/gi;
-  let m: RegExpExecArray | null;
-  let lastIndex = 0;
-
-  while ((m = regex.exec(html))) {
-    parts.push(html.slice(lastIndex, m.index));
-    const h = m[1];
-    let p = m[2];
-
-    let inner = stripTagsFast(p);
-    inner = squashRepetition(inner);
-
-    let ws = inner.split(/\s+/).filter(Boolean);
-    if (ws.length > maxW) {
-      ws = ws.slice(0, maxW);
-    } else if (pad && ws.length < minW) {
-      let i = 0;
-      while (ws.length < minW && i < 60) {
-        ws = ws.concat(fillers[i % fillers.length].split(/\s+/));
-        i++;
-      }
-      if (ws.length > maxW) ws = ws.slice(0, maxW);
-    }
-    p = `<p>${ws.join(" ")}</p>`;
-    parts.push(`${h}${p}`);
-    lastIndex = regex.lastIndex;
-  }
-  parts.push(html.slice(lastIndex));
-  return parts.join("");
-}
-
-/* body sanitize: drop stray "Conclusion / Заключение / Вывод(ы) / निष्कर्ष / समापन" prefixes inside body paragraphs */
-function sanitizeBodySections(sections: string[], lc: LangCode) {
-  const conclAlts = lc === "ru"
-    ? /(Заключение|Выводы?|Итог)\s*[:\-–—]?\s*/i
-    : lc === "hi"
-      ? /(निष्कर्ष|समापन|उपसंहार)\s*[:\-–—]?\s*/i
-      : /(Conclusion)\s*[:\-–—]?\s*/i;
-
-  return sections.map((sec) => {
-    if (new RegExp(`^<h1>\\s*${conclusionHead(lc)}\\s*</h1>`, "i").test(sec)) return sec;
-    return sec.replace(/(<p>)([\s\S]*?)(<\/p>)/i, (_m, open, inner, close) => {
-      let t = inner.replace(conclAlts, "");
-      t = squashRepetition(t);
-      return `${open}${t}${close}`;
-    });
-  });
-}
-
-function removeAllTokens(s: string) {
-  return s.replace(/\[ANCHOR:[^\]]+\]/g, "");
-}
-
-function distributeTokensExact(sections: string[], keywords: string[]) {
-  const N = sections.length;
-  let out = sections.map(removeAllTokens);
-  const map: Record<number, string | null> = {};
-  if (keywords.length === 1) {
-    map[0] = keywords[0];
-  } else if (keywords.length === 2) {
-    map[0] = keywords[0];
-    map[Math.min(2, N - 1)] = keywords[1];
-  } else if (keywords.length >= 4) {
-    for (let i = 0; i < 4 && i < N; i++) map[i] = keywords[i];
-  }
-  out = out.map((sec, idx) => {
-    const kw = map[idx];
-    if (!kw) return sec;
-    const token = `[ANCHOR:${kw}]`;
-    return sec.replace(/<\/p>/i, ` ${token}</p>`);
-  });
-  return out;
-}
+function removeAllTokens(s: string) { return s.replace(/\[ANCHOR:[^\]]+\]/g, ""); }
 function computeSectionKeywordMap(N: number, keywords: string[]) {
   const map: Record<number, string | null> = {};
   if (keywords.length === 1) { map[0] = keywords[0]; }
@@ -9410,22 +12274,8 @@ function computeSectionKeywordMap(N: number, keywords: string[]) {
   else if (keywords.length >= 4) { for (let i = 0; i < 4 && i < N; i++) map[i] = keywords[i]; }
   return map;
 }
-
-/* Find model conclusion (<h1>…</h1><p>…</p>) in chosen language */
-function findModelConclusion(rawHtml: string, lc: LangCode) {
-  if (!rawHtml) return "";
-  const alts = lc === "ru"
-    ? "(Заключение|Выводы?|Итог)"
-    : lc === "hi"
-      ? "(निष्कर्ष|समापन|उपसंहार)"
-      : "(Conclusion)";
-  const m = rawHtml.match(new RegExp(`<h1>\\s*${alts}\\s*</h1>\\s*<p>[\\s\\S]*?<\\/p>`, "i"));
-  return m ? squashRepetition(m[0]) : "";
-}
-
-/* Enforce one keyword per BODY paragraph (others → plain text) */
 function enforceSingleKeywordPerParagraph(html: string, keywords: string[], sectionMap: Record<number, string | null>) {
-  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const esc = (s: string) => s.replace(/[.*+?^${}()|\[\]\\]/g, "\\$&");
   const blocks = html.match(/<h1>[\s\S]*?<\/h1>\s*<p>[\s\S]*?<\/p>/gi) || [];
   let idx = 0;
   let result = html;
@@ -9453,48 +12303,86 @@ function enforceSingleKeywordPerParagraph(html: string, keywords: string[], sect
   }
   return result;
 }
-
-/* Validate BODY only */
-function validateBodyHtml(
-  html: string,
-  keywords: string[],
-  wantSections: number,
-  minW: number,
-  maxW: number
-) {
-  const errors: string[] = [];
-  const blocks = (html.match(/<h1>[\s\S]*?<\/h1>\s*<p>[\s\S]*?<\/p>/gi) || []);
-  if (blocks.length !== wantSections) errors.push(`Body section count must be exactly ${wantSections} (found ${blocks.length}).`);
-  const paras = (html.match(/<p>[\s\S]*?<\/p>/gi) || []);
-  paras.forEach((p) => {
-    const w = wordCount(stripTagsFast(p));
-    if (w < minW || w > maxW) errors.push(`Paragraph out of range (${w} words, expected ${minW}–${maxW}).`);
-  });
-  for (const k of keywords.slice(0, 4)) {
-    const cnt = (html.match(new RegExp(`\\[ANCHOR:${k.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}\\]`, "g")) || []).length;
-    if (cnt !== 1) errors.push(`Token count for "${k}" must be exactly 1 (found ${cnt}).`);
+function ensureNoTerminalKeyword(html: string, keywords: string[], lc: LangCode) {
+  const tails = lc === "ru"
+    ? ["как правило", "на практике", "для большинства проектов", "в итоге"]
+    : lc === "hi"
+      ? ["अक्सर", "व्यवहार में", "अधिकतर मामलों में", "आम तौर पर"]
+      : ["in practice", "for most teams", "in real use", "overall"];
+  const esc = (s: string) => s.replace(/[.*+?^${}()|\[\]\\]/g, "\\$&");
+  const paragraphs = html.match(/<p>[\s\S]*?<\/p>/gi) || [];
+  let out = html;
+  for (const pHtml of paragraphs) {
+    const inner = pHtml.replace(/^<p>|<\/p>$/gi, "");
+    const trimmed = inner.replace(/\s+/g, " ").trim();
+    let needsTail = false;
+    for (const kw of keywords) {
+      const endPlain = new RegExp(`${esc(kw)}\\s*(?:[.!?…]*)\\s*$`, "i");
+      const endAnchor = new RegExp(`>\\s*${esc(kw)}\\s*<\\/a>\\s*(?:[.!?…]*)\\s*$`, "i");
+      const endStrong = new RegExp(`>\\s*${esc(kw)}\\s*<\\/strong>\\s*(?:[.!?…]*)\\s*$`, "i");
+      if (endPlain.test(trimmed) || endAnchor.test(trimmed) || endStrong.test(trimmed)) { needsTail = true; break; }
+    }
+    if (!needsTail) continue;
+    const tail = tails[Math.floor(Math.random() * tails.length)];
+    const fixed = trimmed.replace(/\s*(?:[.!?…]*)\s*$/, `, ${tail}.`);
+    const newP = `<p>${fixed}</p>`;
+    out = out.replace(pHtml, newP);
   }
-  return errors;
+  return out;
+}
+function basicValidate(html: string, keywords: string[], wantSections: number) {
+  if (looksLikeLLMFallback(html)) return false;
+  const blocks = (html.match(/<h1>[\s\S]*?<\/h1>\s*<p>[\s\S]*?<\/p>/gi) || []).length;
+  if (blocks < wantSections - 1) return false;
+  for (const k of keywords.slice(0, Math.min(2, keywords.length))) {
+    if (!html.includes(k)) return false;
+  }
+  return true;
 }
 
-/* =========================
-   Uniqueness guard (shingles + Jaccard)
-   ========================= */
-function shingles(text: string, n = 4): Set<string> {
-  const words = stripTagsFast(text).toLowerCase().split(/\s+/).filter(Boolean);
-  const set = new Set<string>();
-  for (let i = 0; i <= words.length - n; i++) set.add(words.slice(i, i + n).join(" "));
-  return set;
-}
-function jaccard(a: Set<string>, b: Set<string>) {
-  let inter = 0;
-  for (const x of a) if (b.has(x)) inter++;
-  return inter / Math.max(1, a.size + b.size - inter);
+/* ═══════════════════════════════════════════════════════════════
+   ADDITIONAL HUMANIZATION POST-PROCESSING FOR AI-FREE FEEL
+   ═══════════════════════════════════════════════════════════════ */
+
+function humanizeText(text: string): string {
+  // Add slight imperfections: contractions, varied punctuation, natural breaks
+  text = text.replace(/ do not /g, " don't ").replace(/ is not /g, " isn't ").replace(/ it is /g, " it's ");
+  text = text.replace(/\. /g, (match) => Math.random() > 0.7 ? "; " : match);
+  text = text.replace(/, /g, (match) => Math.random() > 0.8 ? "— " : match);
+
+  // Introduce minor "human errors" like repeated words or asides (rarely)
+  const sentences = text.split(/([.!?])/g);
+  for (let i = 0; i < sentences.length; i += 2) {
+    if (Math.random() < 0.05 && sentences[i].split(" ").length > 5) {
+      const words = sentences[i].split(" ");
+      const insertIdx = Math.floor(Math.random() * words.length);
+      words.splice(insertIdx, 0, "you know,");
+      sentences[i] = words.join(" ");
+    }
+  }
+  text = sentences.join("");
+
+  // Vary sentence lengths more aggressively
+  text = squashRepetition(text);
+
+  return text;
 }
 
-/* =========================
-   Grouping (normal vs custom)
-   ========================= */
+function humanizeHtml(html: string): string {
+  const paragraphs = html.match(/<p>[\s\S]*?<\/p>/gi) || [];
+  let out = html;
+  for (const pHtml of paragraphs) {
+    const inner = pHtml.replace(/^<p>|<\/p>$/gi, "").trim();
+    const humanized = humanizeText(inner);
+    const newP = `<p>${humanized}</p>`;
+    out = out.replace(pHtml, newP);
+  }
+  return out;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   GROUPING
+   ═══════════════════════════════════════════════════════════════ */
 function buildGroupsNormal(rows: KeywordRow[], size: KeywordMode): KeywordRow[][] {
   const groups: KeywordRow[][] = [];
   for (let i = 0; i < rows.length; i += size) groups.push(rows.slice(i, i + size));
@@ -9520,29 +12408,31 @@ function buildGroupsCustom(rows: KeywordRow[], size: KeywordMode, count: number)
   return groups;
 }
 
-/* =========================
-   Hook
-   ========================= */
+/* ═══════════════════════════════════════════════════════════════
+   MAIN HOOK
+   ═══════════════════════════════════════════════════════════════ */
 export function useContentGeneration() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [contentItems, setContentItems] = useLocalStorage<ContentItem[]>("content-items", []);
   const [excelProjects, setExcelProjects] = useLocalStorage<ExcelProject[]>("excel-projects", []);
 
   const ensureProject = (proj: Partial<ExcelProject> & { id: string; fileName: string }) => {
-    setExcelProjects((prev = []) => {
-      const exists = prev.some((p) => p.id === proj.id);
-      const base: ExcelProject = {
-        id: proj.id,
-        fileName: proj.fileName,
-        status: (proj as any).status ?? "pending",
-        totalKeywords: (proj as any).totalKeywords ?? 0,
-        processedKeywords: (proj as any).processedKeywords ?? 0,
-        createdAt: (proj as any).createdAt ?? new Date().toISOString(),
-        error: (proj as any).error,
-        failedCount: (proj as any).failedCount ?? 0,
-      };
-      if (exists) return prev.map((p) => (p.id === proj.id ? { ...p, ...base } : p));
-      return [...prev, base];
+    startTransition(() => {
+      setExcelProjects((prev = []) => {
+        const exists = prev.some((p) => p.id === proj.id);
+        const base: ExcelProject = {
+          id: proj.id,
+          fileName: proj.fileName,
+          status: (proj as any).status ?? "pending",
+          totalKeywords: (proj as any).totalKeywords ?? 0,
+          processedKeywords: (proj as any).processedKeywords ?? 0,
+          createdAt: (proj as any).createdAt ?? new Date().toISOString(),
+          error: (proj as any).error,
+          failedCount: (proj as any).failedCount ?? 0,
+        };
+        if (exists) return prev.map((p) => (p.id === proj.id ? { ...p, ...base } : p));
+        return [...prev, base];
+      });
     });
   };
 
@@ -9552,19 +12442,29 @@ export function useContentGeneration() {
     ensureProject({ id: fileId, fileName: file.name, status: "pending", totalKeywords: 0, processedKeywords: 0, failedCount: 0 });
 
     const bufferItems: ContentItem[] = [];
-    let flushTimer: number | null = null;
+    let scheduled = false;
+    const BATCH_SIZE = 20;
     const flushNow = () => {
-      if (flushTimer != null) { clearTimeout(flushTimer as any); flushTimer = null; }
+      scheduled = false;
       if (!bufferItems.length) return;
       const toWrite = bufferItems.splice(0, bufferItems.length);
-      setContentItems((prev) => [...(prev ?? []), ...toWrite]);
+      startTransition(() => {
+        setContentItems((prev) => [...(prev ?? []), ...toWrite]);
+      });
     };
-    const scheduleFlush = () => { if (flushTimer == null) flushTimer = window.setTimeout(() => flushNow(), 160); };
+    const scheduleFlush = () => {
+      if (bufferItems.length >= BATCH_SIZE) return flushNow();
+      if (!scheduled) { scheduled = true; queueMicrotask(flushNow); }
+    };
 
     let failedCount = 0;
     let processedCount = 0;
+    const failedGroups: Array<{ index: number; grp: KeywordRow[] }> = [];
+
     const updateProgress = (processed: number, total: number) => {
-      setExcelProjects((prev) => (prev ?? []).map((p) => (p.id === fileId ? { ...p, processedKeywords: processed } : p)));
+      startTransition(() => {
+        setExcelProjects((prev) => (prev ?? []).map((p) => (p.id === fileId ? { ...p, processedKeywords: processed } : p)));
+      });
       try { onProgress?.(Math.round((processed / Math.max(1, total)) * 100)); } catch {}
     };
 
@@ -9582,28 +12482,20 @@ export function useContentGeneration() {
       const lc = lcOf(prefs.language);
       const size = (prefs.keywordMode ?? 1) as KeywordMode;
 
-      // Build groups
       const baseGroups = prefs.customModeEnabled
         ? buildGroupsCustom(keywords, size, Math.max(1, Math.min(200, prefs.articleCount || 1)))
         : buildGroupsNormal(keywords, size);
 
       ensureProject({ id: fileId, fileName: file.name, status: "processing", totalKeywords: baseGroups.length, processedKeywords: 0, failedCount: 0 });
-      toast.info(`Generating ${baseGroups.length} article(s) • Mode: ${size} keyword(s)/article${prefs.customModeEnabled ? " • Custom count" : ""}`);
+      toast.info(`⚡ Generating ${baseGroups.length} article(s) • ${size} keyword(s)/article • Humanized content`);
 
-      // Word bounds
-      const paraMin = Math.floor((prefs.paragraphWords || 100) * 0.92);
-      const paraMax = Math.ceil((prefs.paragraphWords || 100) * 1.10);
+      const paraMin = Math.floor((prefs.paragraphWords || 100) * 0.88);
+      const paraMax = Math.ceil((prefs.paragraphWords || 100) * 1.15);
       const wantSections = prefs.sectionCount || 5;
 
-      // Concurrency
-      const cpu = (navigator.hardwareConcurrency ?? 4);
-      let concurrency = clamp(Math.floor(cpu / 2), 2, 8);
-      const MIN = 1, MAX = 8;
-
-      // Uniqueness state
-      const seenShingles: Set<string>[] = [];
-      const UNIQUENESS_THRESHOLD = 0.60;
-      const MAX_REPAIRS = 2;
+      // 🚀 Turbo pool-aware concurrency (increased for speed)
+      let concurrency = Math.min(Math.max(12, (navigator.hardwareConcurrency ?? 4) * 3), 24);
+      const MAX = 96;
 
       let idx = 0;
       const running = new Set<Promise<void>>();
@@ -9618,30 +12510,6 @@ export function useContentGeneration() {
 
         const task = (async () => {
           try {
-            const buildOnce = async (instructions: string) => {
-              let result = await generateJSONTitleHtml({ keywords: kws, instructions });
-
-              // BODY build
-              let sections = ensureH1SectionsFromAnyHtml(result.html, wantSections, paraMin, paraMax, lc);
-              sections = distributeTokensExact(sections, kws);
-              sections = sanitizeBodySections(sections, lc);
-
-              // MODEL CONCLUSION (optional)
-              const modelConclusion = prefs.includeConclusion ? findModelConclusion(result.html, lc) : "";
-
-              // Normalize BODY (pad allowed), conclusion (no pad)
-              let bodyHtml = normalizeParagraphWordRange(sections.join(""), paraMin, paraMax, lc, true);
-              bodyHtml = squashRepetition(bodyHtml);
-
-              let finalHtml = bodyHtml;
-              if (prefs.includeConclusion && modelConclusion) {
-                const normalizedConclusion = normalizeParagraphWordRange(modelConclusion, paraMin, paraMax, lc, false);
-                finalHtml += normalizedConclusion;
-              }
-
-              return { result, bodyHtml, finalHtml };
-            };
-
             const basePlan = buildPlanFromPrefs({
               keywords: kws,
               prefs: {
@@ -9652,102 +12520,36 @@ export function useContentGeneration() {
               variationId: groupIndex + 1,
             });
 
-            let attempt = 0;
-            let html = "";
-            let bodyHtml = "";
-            let title = "";
-            let conclusionOk = !prefs.includeConclusion;
-            let langOk = false;
-            let uniqueOk = false;
+            const result = await generateJSONTitleHtml({ keywords: kws, instructions: basePlan });
 
-            while (attempt < MAX_REPAIRS + 1) {
-              const { result, bodyHtml: bHtml, finalHtml } = await buildOnce(basePlan);
-              title = result.title;
-              bodyHtml = bHtml;
-              html = finalHtml;
-
-              // Validate BODY
-              let errs = validateBodyHtml(bodyHtml, kws, wantSections, paraMin, paraMax);
-
-              // Enforce language (script check)
-              const exp = expectScript(lc);
-              const scrBody = detectScript(bodyHtml);
-              langOk = scrBody === exp;
-
-              // Conclusion present when required
-              if (prefs.includeConclusion) {
-                const concl = findModelConclusion(html, lc);
-                conclusionOk = concl.length > 0 && detectScript(concl) === exp;
-                if (!conclusionOk) errs.push("Conclusion missing or wrong language.");
-              }
-
-              // Uniqueness check vs. prior items (same run)
-              const sig = shingles(bodyHtml);
-              let maxSim = 0;
-              for (const prev of seenShingles) {
-                maxSim = Math.max(maxSim, jaccard(sig, prev));
-              }
-              uniqueOk = maxSim < UNIQUENESS_THRESHOLD;
-              if (!uniqueOk) errs.push(`Body too similar to previous output (similarity ${(maxSim*100).toFixed(0)}%).`);
-
-              // If everything fine → break
-              if (errs.length === 0 && langOk && conclusionOk && uniqueOk) {
-                // keep signature
-                seenShingles.push(sig);
-                break;
-              }
-
-              // Build a repair instruction
-              const repairPlan = [
-                basePlan,
-                "",
-                "REWRITE STRICTLY to fix these issues:",
-                ...errs.map((e) => `- ${e}`),
-                lc === "ru"
-                  ? `Language enforcement: write 100% in Russian (Cyrillic). No English terms or Latin script.`
-                  : lc === "hi"
-                    ? `Language enforcement: write 100% in Hindi (Devanagari). No English terms or Latin script.`
-                    : `Language enforcement: write 100% in English.`,
-                `Uniqueness: change persona, city, constraints, sequence of points and at least 3 numeric specifics. Do NOT reuse prior sentences.`,
-                `Tokens: same mapping as instructed. Never put tokens in the conclusion.`,
-                `Return ONLY JSON with corrected "title" and "html".`,
-              ].join("\n");
-
-              const built = await generateJSONTitleHtml({ keywords: kws, instructions: repairPlan });
-
-              // Re-run shaping on repaired output
-              let sections = ensureH1SectionsFromAnyHtml(built.html, wantSections, paraMin, paraMax, lc);
-              sections = distributeTokensExact(sections, kws);
-              sections = sanitizeBodySections(sections, lc);
-              bodyHtml = normalizeParagraphWordRange(sections.join(""), paraMin, paraMax, lc, true);
-              bodyHtml = squashRepetition(bodyHtml);
-
-              html = bodyHtml;
-              if (prefs.includeConclusion) {
-                const concl = findModelConclusion(built.html, lc);
-                if (concl) {
-                  const normC = normalizeParagraphWordRange(concl, paraMin, paraMax, lc, false);
-                  html += normC;
-                }
-              }
-              title = built.title;
-
-              // Next loop will re-check again
-              attempt++;
+            // Reject stub/fallback so it retries & never leaks to UI
+            const html0 = String(result.html || "");
+            if (/—\s*draft\./i.test(html0) || (html0.match(/<h1>/gi) || []).length <= 1 || nonTokenWordCount(html0) < 50) {
+              throw new Error("LLM fallback/stub detected (rate-limit or non-JSON).");
             }
 
-            // Link tokens
+            let sections = ensureH1SectionsFromAnyHtml(result.html, wantSections, paraMin, paraMax, lc);
+            sections = sections.map((s, i) => (kws[i] ? s.replace(/<\/p>/i, ` [ANCHOR:${kws[i]}]</p>`) : s));
+
+            let bodyHtml = sections.join("");
+            bodyHtml = squashRepetition(bodyHtml);
+
+            if (!basicValidate(bodyHtml, kws, wantSections)) {
+              throw new Error("Basic validation failed");
+            }
+
             const anchors = Object.keys(urlMap).map((k) => ({ keyword: k, url: urlMap[k] || undefined }));
-            html = applyAnchorTokens(html, anchors);
+            let html = applyAnchorTokens(bodyHtml, anchors);
             html = removeAllTokens(html);
 
-            // Enforce one keyword per BODY paragraph (skip conclusion count)
             const bodyCount = (bodyHtml.match(/<h1>[\s\S]*?<\/h1>\s*<p>[\s\S]*?<\/p>/gi) || []).length;
             const secMap = computeSectionKeywordMap(bodyCount, kws);
             html = enforceSingleKeywordPerParagraph(html, kws, secMap);
-
-            // Final de-stutter
+            html = ensureNoTerminalKeyword(html, kws, lc);
             html = squashRepetition(html);
+
+            // Additional humanization for AI-free content
+            html = humanizeHtml(html);
 
             const item: ContentItem = {
               id: `${fileId}-${groupIndex}-${Date.now()}`,
@@ -9757,7 +12559,7 @@ export function useContentGeneration() {
               fileId,
               fileName: file.name,
               createdAt: new Date().toISOString(),
-              title,
+              title: result.title,
               targetUrl: urlMap[kws[0]] ?? null,
               urlMap,
               status: "success",
@@ -9776,6 +12578,7 @@ export function useContentGeneration() {
             scheduleFlush();
           } catch (e) {
             failedCount++;
+            failedGroups.push({ index: groupIndex, grp });
             console.error("group generate error:", e);
           } finally {
             processedCount += 1;
@@ -9786,27 +12589,133 @@ export function useContentGeneration() {
         running.add(task);
       };
 
+      // Main loop
       while (idx < baseGroups.length || running.size > 0) {
-        const cur = clamp(Math.floor(concurrency), 2, 8);
+        const cur = Math.max(12, Math.min(Math.floor(concurrency), MAX));
         while (running.size < cur && idx < baseGroups.length) startNext();
         if (!running.size && idx >= baseGroups.length) break;
         await Promise.race(Array.from(running));
-        if (failedCount > 0 && concurrency > 2) concurrency -= 0.2;
-        else if (concurrency < MAX) concurrency += 0.1;
+
+        // Adapt concurrency to avoid 429 bursts, but keep speed (more aggressive)
+        if (failedCount > processedCount * 0.2 && concurrency > 12) concurrency -= 0.5;
+        else if (concurrency < MAX && failedCount < processedCount * 0.05) concurrency += 0.5;
+      }
+
+      // Tail retry (low & polite)
+      if (failedGroups.length) {
+        toast.message(`Retrying ${failedGroups.length} failed item(s) at low speed…`);
+        const again = [...failedGroups];
+        failedGroups.length = 0;
+
+        const runOne = async (grp: KeywordRow[], groupIndex: number) => {
+          const kws = grp.map(g => g.keyword);
+          const urlMap: Record<string, string | null> = {};
+          grp.forEach(g => { urlMap[g.keyword] = g.url ?? null; });
+
+          const basePlan = buildPlanFromPrefs({
+            keywords: kws,
+            prefs: {
+              ...prefs,
+              sectionCount: (prefs.sectionCount as any) || 5,
+              paragraphWords: (prefs.paragraphWords as any) || 100,
+            },
+            variationId: groupIndex + 1,
+          });
+
+          const res = await generateJSONTitleHtml({ keywords: kws, instructions: basePlan });
+          const html0b = String(res.html || "");
+          if (/—\s*draft\./i.test(html0b) || (html0b.match(/<h1>/gi) || []).length <= 1 || nonTokenWordCount(html0b) < 50) {
+            throw new Error("LLM fallback/stub on retry");
+          }
+
+          let sections = ensureH1SectionsFromAnyHtml(res.html, wantSections, paraMin, paraMax, lc);
+          sections = sections.map((s, i) => (kws[i] ? s.replace(/<\/p>/i, ` [ANCHOR:${kws[i]}]</p>`) : s));
+
+          let bodyHtml = sections.join("");
+          bodyHtml = squashRepetition(bodyHtml);
+          if (!basicValidate(bodyHtml, kws, wantSections)) throw new Error("Basic validation failed on retry");
+
+          const anchors = Object.keys(urlMap).map(k => ({ keyword: k, url: urlMap[k] || undefined }));
+          let html = applyAnchorTokens(bodyHtml, anchors);
+          html = removeAllTokens(html);
+
+          const bodyCount = (bodyHtml.match(/<h1>[\s\S]*?<\/h1>\s*<p>[\s\S]*?<\/p>/gi) || []).length;
+          const secMap = computeSectionKeywordMap(bodyCount, kws);
+          html = enforceSingleKeywordPerParagraph(html, kws, secMap);
+          html = ensureNoTerminalKeyword(html, kws, lc);
+          html = squashRepetition(html);
+
+          // Additional humanization for AI-free content
+          html = humanizeHtml(html);
+
+          const item: ContentItem = {
+            id: `${fileId}-retry-${groupIndex}-${Date.now()}`,
+            keyword: kws[0],
+            keywordsUsed: kws,
+            generatedContent: html,
+            fileId,
+            fileName: file.name,
+            createdAt: new Date().toISOString(),
+            title: res.title,
+            targetUrl: urlMap[kws[0]] ?? null,
+            urlMap,
+            status: "success",
+            prefsSnapshot: {
+              mood: prefs.mood,
+              paragraphWords: prefs.paragraphWords,
+              sectionCount: prefs.sectionCount,
+              includeConclusion: prefs.includeConclusion,
+              language: prefs.language,
+              customModeEnabled: prefs.customModeEnabled,
+              articleCount: prefs.articleCount,
+              keywordMode: prefs.keywordMode,
+            },
+          };
+          bufferItems.push(item);
+          scheduleFlush();
+        };
+
+        const RETRY_CONCURRENCY = 4; // Increased for faster retries
+        const queue = [...again];
+        const running2 = new Set<Promise<void>>();
+
+        const startNextRetry = () => {
+          if (!queue.length) return;
+          const { grp, index } = queue.shift()!;
+          const p = (async () => {
+            try {
+              await runOne(grp, index);
+            } catch (e) {
+              console.error("retry group failed:", e);
+            }
+          })().finally(() => running2.delete(p));
+          running2.add(p);
+        };
+
+        while (running2.size < RETRY_CONCURRENCY && queue.length) startNextRetry();
+        while (running2.size || queue.length) {
+          await Promise.race(Array.from(running2));
+          while (running2.size < RETRY_CONCURRENCY && queue.length) startNextRetry();
+          await new Promise(r => setTimeout(r, 200 + Math.random() * 200)); // Reduced delay
+        }
       }
 
       flushNow();
-      setExcelProjects((prev) => (prev ?? []).map((p) =>
-        p.id === fileId ? { ...p, status: "completed", processedKeywords: baseGroups.length, failedCount } : p
-      ));
+      startTransition(() => {
+        setExcelProjects((prev) => (prev ?? []).map((p) =>
+          p.id === fileId ? { ...p, status: "completed", processedKeywords: baseGroups.length, failedCount } : p
+        ));
+      });
       const ok = baseGroups.length - failedCount;
-      toast.success(`Finished ${file.name}: ✅ ${ok} • ❌ ${failedCount}`);
+      toast.success(`✅ Finished ${file.name}: ${ok} articles • ${failedCount} failed`);
       onProgress?.(100);
     } catch (error) {
       console.error("generateContent overall error:", error);
-      setExcelProjects((prev) => (prev ?? []).map((p) =>
-        p.id === fileId ? { ...p, status: "error", error: error instanceof Error ? error.message : String(error) } : p
-      ));
+      startTransition(() => {
+        setExcelProjects((prev) => (prev ?? []).map((p) =>
+          p.id === fileId ? { ...p, status: "error", error: error instanceof Error ? error.message : String(error) } : p
+        ));
+      });
       toast.error(`Failed processing ${file.name}: ${error instanceof Error ? error.message : String(error)}`);
       onProgress?.(100);
       throw error;
@@ -9817,14 +12726,18 @@ export function useContentGeneration() {
   };
 
   const deleteProject = (projectId: string) => {
-    setExcelProjects((prev) => (prev ?? []).filter((p) => p.id !== projectId));
-    setContentItems((prev) => (prev ?? []).filter((c) => c.fileId !== projectId));
+    startTransition(() => {
+      setExcelProjects((prev) => (prev ?? []).filter((p) => p.id !== projectId));
+      setContentItems((prev) => (prev ?? []).filter((c) => c.fileId !== projectId));
+    });
     toast.success("Project deleted");
   };
 
   const deleteAllProjects = () => {
-    setExcelProjects([]);
-    setContentItems([]);
+    startTransition(() => {
+      setExcelProjects([]);
+      setContentItems([]);
+    });
     toast.success("All projects cleared");
   };
 

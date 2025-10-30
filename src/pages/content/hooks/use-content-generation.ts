@@ -12196,7 +12196,7 @@ function stripTagsFast(html: string) {
     .replace(/&nbsp;|&#160;/g, " ")
     .replace(/\s+/g, " ").trim();
 }
-function clamp(n: number, min: number, max: number) { return Math.max(min, Math.min(max, n)); }
+
 function squashRepetition(text: string): string {
   let out = text.replace(/(\b([a-z\u0400-\u04ff\u0900-\u097f]{2,})\b\.?)(\s+\1){2,}/gi, (_m, a) => `${a} ${a}`);
   out = out.replace(/(\b[^\s<>\{}]+\b(?:\s+\b[^\s<>\{}]+\b){0,2})([.!?])?(?:\s+\1\2?){2,}/gi, (_m, a, p = "") => `${a}${p} ${a}${p}`);

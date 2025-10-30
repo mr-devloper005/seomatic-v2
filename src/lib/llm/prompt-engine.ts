@@ -687,7 +687,7 @@ export function buildPlanFromPrefs(params: {
   prefs: ContentPreferences;
   variationId: number;
 }) {
-  const { keywords, prefs, variationId } = params;
+  const { keywords, prefs } = params;
   const { min, max, target } = bounds(prefs.paragraphWords);
 
   const tokens = keywords.slice(0, 4).map((k) => `[ANCHOR:${k}]`).join(" ");

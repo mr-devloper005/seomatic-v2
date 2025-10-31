@@ -723,6 +723,354 @@
 
 
 
+// import React, { useMemo, useState } from "react";
+// import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+// import { Button } from "@/components/ui/button";
+// import { Textarea } from "@/components/ui/textarea";
+// import { Input } from "@/components/ui/input";
+// import { Label } from "@/components/ui/label";
+// import { Switch } from "@/components/ui/switch";
+// import { Slider } from "@/components/ui/slider";
+// import { Badge } from "@/components/ui/badge";
+// // import { Separator } from "@/components/ui/separator";
+// import { cn } from "@/lib/utils";
+// import {
+//   useContentPreferences,
+//   type ParagraphWordTarget,
+//   type SectionCount,
+//   type ContentMood,
+//   type KeywordMode,
+// } from "@/hooks/use-preferences";
+// import { Check,  Globe2, Sparkles, Wand2 } from "lucide-react";
+
+// const MOODS: ContentMood[] = [
+//   "Entertaining",
+//   "Informative",
+//   "Inspirational",
+//   "Humorous",
+//   "Emotional",
+//   "Educational",
+// ];
+// const PARA_OPTS: ParagraphWordTarget[] = [80, 100, 120, 150];
+// const SEC_OPTS: SectionCount[] = [4, 5, 6];
+// const KW_OPTS: KeywordMode[] = [1, 2, 4];
+// const LANGS = [
+//   "English (US)",
+//   "English (UK)",
+//   "Hindi",
+//   "Spanish",
+//   "French",
+//   "German",
+//   "Italian",
+//   "Portuguese",
+//   "Russian",
+//   "Arabic",
+//   "Japanese",
+// ];
+
+// /** Compact segmented buttons */
+// function Segmented<T extends string | number>({
+//   value,
+//   onChange,
+//   items,
+//   render,
+//   className,
+// }: {
+//   value: T;
+//   onChange: (v: T) => void;
+//   items: T[];
+//   render?: (v: T) => React.ReactNode;
+//   className?: string;
+// }) {
+//   return (
+//     <div
+//       className={cn(
+//         "inline-flex w-full flex-wrap gap-2 rounded-xl border border-gray-200 bg-white p-1.5 shadow-sm",
+//         "hover:shadow-md transition-all duration-200",
+//         className
+//       )}
+//     >
+//       {items.map((it) => {
+//         const active = it === value;
+//         return (
+//           <Button
+//             key={String(it)}
+//             size="sm"
+//             variant={active ? "default" : "ghost"}
+//             onClick={() => onChange(it)}
+//             className={cn(
+//               "rounded-lg px-3 py-1.5 text-sm transition-all",
+//               active
+//                 ? "bg-gradient-to-r from-blue-500 to-green-400 text-white shadow-sm"
+//                 : "border border-transparent text-gray-700 hover:text-blue-600 hover:bg-orange-50"
+//             )}
+//           >
+//             {render ? render(it) : String(it)}
+//           </Button>
+//         );
+//       })}
+//     </div>
+//   );
+// }
+
+// /** Subtle gradient border frame */
+// function GradientFrame({ children }: { children: React.ReactNode }) {
+//   return (
+//     <div className="relative rounded-3xl p-[1px] bg-gradient-to-r from-gray-400 via-green-300/30 to-orange-300/40">
+//       <div className="relative rounded-3xl bg-gradient-to-b from-gray-400 to-green-400 shadow-[0_8px_24px_rgba(0,0,0,0.08)]">
+//         {children}
+//       </div>
+//     </div>
+//   );
+// }
+
+// export function PreferencesPanel() {
+//   const {
+//     prefs,
+//     savedPrefs,
+//     setKeywordMode,
+//     setExtraInstructions,
+//     setMood,
+//     setParagraphWords,
+//     setSectionCount,
+//     setIncludeConclusion,
+//     setCustomModeEnabled,
+//     setArticleCount,
+//     setLanguage,
+    
+//     reset,
+//   } = useContentPreferences();
+
+//   const [langQuery, setLangQuery] = useState("");
+//   const langList = useMemo(
+//     () => LANGS.filter((l) => l.toLowerCase().includes(langQuery.toLowerCase())),
+//     [langQuery]
+//   );
+//   const dirty = JSON.stringify(prefs) !== JSON.stringify(savedPrefs);
+
+//   return (
+//     <GradientFrame>
+//       <Card className="relative border-0 shadow-xl rounded-3xl">
+//         {/* Header */}
+//         <CardHeader className="pb-4 pt-6 px-6 border-b border-gray-400 bg-gradient-to-r from-blue-200 to-green-100 rounded-t-3xl">
+//           <div className="flex items-center justify-between flex-wrap gap-3">
+//             <div>
+//               <CardTitle className="text-2xl font-bold tracking-tight flex items-center gap-2 text-blue-700">
+//                 <Sparkles className="h-5 w-5 text-green-500" /> Content Preferences
+//               </CardTitle>
+//               <p className="mt-1 text-sm text-gray-500">
+//                 Fine-tune how your articles should feel, read, and look.
+//               </p>
+//             </div>
+//             <Badge
+//               variant={dirty ? "default" : "outline"}
+//               className={cn(
+//                 "rounded-full px-3 py-1 text-xs",
+//                 dirty
+//                   ? "bg-green-500 text-white"
+//                   : "border border-gray-300 text-gray-500 bg-white"
+//               )}
+//             >
+//               {dirty ? "Unsaved Changes" : "Up to Date"}
+//             </Badge>
+//           </div>
+//         </CardHeader>
+
+//         {/* Main Content */}
+//         <CardContent className="px-6 py-8">
+//           <div className="grid gap-8 md:grid-cols-2 xl:grid-cols-2">
+//             {/* Keyword Mode */}
+//             <section>
+//               <Label className="text-sm font-semibold text-gray-800 mb-2 block">
+//                 Keyword Mode
+//               </Label>
+//               <Segmented
+//                 value={prefs.keywordMode}
+//                 onChange={(m) => setKeywordMode(m as KeywordMode)}
+//                 items={KW_OPTS}
+//                 render={(m) => (
+//                   <span>
+//                     {m} keyword{Number(m) > 1 ? "s" : ""} / article
+//                   </span>
+//                 )}
+//               />
+//               <p className="text-xs text-gray-500 mt-2">
+//                 Defines how many keyword sets per generated article.
+//               </p>
+//             </section>
+
+//             {/* Mood */}
+//             <section>
+//               <Label className="text-sm font-semibold text-gray-800 mb-2 block">
+//                 Content Mood
+//               </Label>
+//               <Segmented
+//                 value={prefs.mood}
+//                 onChange={(m) => setMood(m as ContentMood)}
+//                 items={MOODS}
+//               />
+//             </section>
+
+//             {/* Paragraph Words */}
+//             <section>
+//               <Label className="text-sm font-semibold text-gray-800 mb-2 block">
+//                 Paragraph Length
+//               </Label>
+//               <Segmented
+//                 value={prefs.paragraphWords}
+//                 onChange={(w) => setParagraphWords(w as ParagraphWordTarget)}
+//                 items={PARA_OPTS}
+//                 render={(w) => <span>{w} words</span>}
+//               />
+//             </section>
+
+//             {/* Structure */}
+//             <section>
+//               <Label className="text-sm font-semibold text-gray-800 mb-2 block">
+//                 Structure & Sections
+//               </Label>
+//               <Segmented
+//                 value={prefs.sectionCount}
+//                 onChange={(n) => setSectionCount(n as SectionCount)}
+//                 items={SEC_OPTS}
+//                 render={(n) => <span>{n} sections</span>}
+//               />
+//               <div className="mt-3 flex items-center gap-3 border border-gray-200 rounded-2xl p-3 bg-gray-50 hover:border-blue-300 transition">
+//                 <Switch
+//                   checked={prefs.includeConclusion}
+//                   onCheckedChange={(v: boolean) => setIncludeConclusion(!!v)}
+//                   id="include-conclusion"
+//                 />
+//                 <Label
+//                   htmlFor="include-conclusion"
+//                   className="text-sm font-medium text-gray-700"
+//                 >
+//                   Include Conclusion
+//                 </Label>
+//               </div>
+//             </section>
+
+//             {/* Custom Count */}
+//             <section>
+//               <Label className="text-sm font-semibold text-gray-800 flex items-center gap-2 mb-2">
+//                 <Wand2 className="h-4 w-4 text-green-500" /> Custom Article Count
+//               </Label>
+//               <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 shadow-inner">
+//                 <div className="flex items-center justify-between mb-3">
+//                   <div className="flex items-center gap-2">
+//                     <Switch
+//                       checked={prefs.customModeEnabled}
+//                       onCheckedChange={(v: boolean) => setCustomModeEnabled(!!v)}
+//                     />
+//                     <span className="text-sm text-gray-700">Enable random reuse</span>
+//                   </div>
+//                   {prefs.customModeEnabled && (
+//                     <Badge className="bg-green-500 text-white">Active</Badge>
+//                   )}
+//                 </div>
+//                 <Slider
+//                   value={[prefs.articleCount]}
+//                   min={1}
+//                   max={200}
+//                   step={1}
+//                   onValueChange={([v]: [number]) => setArticleCount(v)}
+//                   className="mb-3"
+//                 />
+//                 <Input
+//                   type="number"
+//                   min={1}
+//                   max={200}
+//                   value={prefs.articleCount}
+//                   onChange={(e) => setArticleCount(Number(e.target.value))}
+//                   className="w-24 text-center border-gray-300"
+//                 />
+//               </div>
+//             </section>
+
+//             {/* Language */}
+//             <section>
+//               <Label className="text-sm font-semibold text-gray-800 flex items-center gap-2 mb-2">
+//                 <Globe2 className="h-4 w-4 text-blue-500" /> Language
+//               </Label>
+//               <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3 shadow-sm">
+//                 <Input
+//                   value={langQuery}
+//                   onChange={(e) => setLangQuery(e.target.value)}
+//                   placeholder="Search language..."
+//                   className="mb-2 border-gray-300"
+//                 />
+//                 <div className="max-h-44 overflow-auto rounded-lg border border-gray-200">
+//                   {langList.map((l) => {
+//                     const active = prefs.language === l;
+//                     return (
+//                       <button
+//                         key={l}
+//                         onClick={() => {
+//                           setLanguage(l);
+//                           setLangQuery("");
+//                         }}
+//                         className={cn(
+//                           "flex w-full items-center justify-between px-3 py-2 text-left text-sm transition",
+//                           active
+//                             ? "bg-gradient-to-r from-green-400/30 to-blue-400/30 text-gray-900 font-medium"
+//                             : "hover:bg-orange-50"
+//                         )}
+//                       >
+//                         <span>{l}</span>
+//                         {active && <Check className="h-4 w-4 text-green-600" />}
+//                       </button>
+//                     );
+//                   })}
+//                 </div>
+//                 <p className="mt-2 text-xs text-gray-500">
+//                   Selected: <strong>{prefs.language}</strong>
+//                 </p>
+//               </div>
+//             </section>
+
+//             {/* Instructions */}
+//             <section className="xl:col-span-2">
+//               <Label className="text-sm font-semibold text-gray-800 mb-2 block">
+//                 Additional Instructions
+//               </Label>
+//               <Textarea
+//                 value={prefs.extraInstructions}
+//                 onChange={(e) => setExtraInstructions(e.target.value)}
+//                 placeholder="Describe tone, structure, audience, or must-include ideas..."
+//                 className="min-h-[140px] border-gray-300 rounded-2xl bg-white shadow-sm border-4 hover:shadow-md transition-all"
+//               />
+//               <div className="flex gap-2 mt-3">
+//                 <Button className="rounded-2xl bg-gradient-to-r from-blue-500 to-green-400 text-white hover:from-blue-600 hover:to-orange-400 transition-all">
+//                   Save
+//                 </Button>
+//                 <Button
+//                   variant="outline"
+//                   onClick={reset}
+//                   className="rounded-2xl border-gray-300 text-gray-700 hover:bg-orange-50"
+//                 >
+//                   Reset
+//                 </Button>
+//               </div>
+//             </section>
+//           </div>
+
+//           {/* Footer */}
+//           <div className="mt-8 rounded-2xl border border-gray-200 bg-gray-50 p-4 text-sm flex flex-wrap items-center justify-between shadow-sm">
+//             <span className="text-gray-600">
+//               💡 Combine <b>mood</b> and <b>length</b> to produce natural, human-like rhythm.
+//             </span>
+        
+//           </div>
+//         </CardContent>
+//       </Card>
+//     </GradientFrame>
+//   );
+// }
+
+
+
+
+// src/components/PreferencesPanel.tsx
 import React, { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -732,8 +1080,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
-// import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import {
   useContentPreferences,
   type ParagraphWordTarget,
@@ -741,7 +1089,7 @@ import {
   type ContentMood,
   type KeywordMode,
 } from "@/hooks/use-preferences";
-import { Check,  Globe2, Sparkles, Wand2 } from "lucide-react";
+import { Check, Globe2, Sparkles, Wand2 } from "lucide-react";
 
 const MOODS: ContentMood[] = [
   "Entertaining",
@@ -816,8 +1164,8 @@ function Segmented<T extends string | number>({
 /** Subtle gradient border frame */
 function GradientFrame({ children }: { children: React.ReactNode }) {
   return (
-    <div className="relative rounded-3xl p-[1px] bg-gradient-to-r from-gray-400 via-green-300/30 to-orange-300/40">
-      <div className="relative rounded-3xl bg-gradient-to-b from-gray-400 to-green-400 shadow-[0_8px_24px_rgba(0,0,0,0.08)]">
+    <div className="relative rounded-3xl p-[1px] bg-gradient-to-r from-gray-200 via-green-200/40 to-orange-200/40">
+      <div className="relative rounded-3xl bg-white shadow-[0_8px_24px_rgba(0,0,0,0.06)]">
         {children}
       </div>
     </div>
@@ -837,7 +1185,7 @@ export function PreferencesPanel() {
     setCustomModeEnabled,
     setArticleCount,
     setLanguage,
-    
+    save,    // ✅ now used
     reset,
   } = useContentPreferences();
 
@@ -848,11 +1196,16 @@ export function PreferencesPanel() {
   );
   const dirty = JSON.stringify(prefs) !== JSON.stringify(savedPrefs);
 
+  const handleSave = () => {
+    save();
+    toast.success("Preferences saved");
+  };
+
   return (
     <GradientFrame>
       <Card className="relative border-0 shadow-xl rounded-3xl">
         {/* Header */}
-        <CardHeader className="pb-4 pt-6 px-6 border-b border-gray-400 bg-gradient-to-r from-blue-200 to-green-100 rounded-t-3xl">
+        <CardHeader className="pb-4 pt-6 px-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-green-50 rounded-t-3xl">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
               <CardTitle className="text-2xl font-bold tracking-tight flex items-center gap-2 text-blue-700">
@@ -868,7 +1221,7 @@ export function PreferencesPanel() {
                 "rounded-full px-3 py-1 text-xs",
                 dirty
                   ? "bg-green-500 text-white"
-                  : "border border-gray-300 text-gray-500 bg-white"
+                  : "border border-gray-300 text-gray-600 bg-white"
               )}
             >
               {dirty ? "Unsaved Changes" : "Up to Date"}
@@ -1012,7 +1365,7 @@ export function PreferencesPanel() {
                         className={cn(
                           "flex w-full items-center justify-between px-3 py-2 text-left text-sm transition",
                           active
-                            ? "bg-gradient-to-r from-green-400/30 to-blue-400/30 text-gray-900 font-medium"
+                            ? "bg-gradient-to-r from-green-400/20 to-blue-400/20 text-gray-900 font-medium"
                             : "hover:bg-orange-50"
                         )}
                       >
@@ -1022,7 +1375,7 @@ export function PreferencesPanel() {
                     );
                   })}
                 </div>
-                <p className="mt-2 text-xs text-gray-500">
+                <p className="mt-2 text-xs text-gray-600">
                   Selected: <strong>{prefs.language}</strong>
                 </p>
               </div>
@@ -1037,15 +1390,19 @@ export function PreferencesPanel() {
                 value={prefs.extraInstructions}
                 onChange={(e) => setExtraInstructions(e.target.value)}
                 placeholder="Describe tone, structure, audience, or must-include ideas..."
-                className="min-h-[140px] border-gray-300 rounded-2xl bg-white shadow-sm border-4 hover:shadow-md transition-all"
+                className="min-h-[140px] border-gray-300 rounded-2xl bg-white shadow-sm hover:shadow-md transition-all"
               />
               <div className="flex gap-2 mt-3">
-                <Button className="rounded-2xl bg-gradient-to-r from-blue-500 to-green-400 text-white hover:from-blue-600 hover:to-orange-400 transition-all">
-                  Save
+                <Button
+                  className="rounded-2xl bg-gradient-to-r from-blue-500 to-green-400 text-white hover:from-blue-600 hover:to-orange-400 transition-all"
+                  onClick={handleSave}
+                  disabled={!dirty}
+                >
+                  {dirty ? "Save" : "Saved"}
                 </Button>
                 <Button
                   variant="outline"
-                  onClick={reset}
+                  onClick={() => { reset(); toast.info("Preferences reset"); }}
                   className="rounded-2xl border-gray-300 text-gray-700 hover:bg-orange-50"
                 >
                   Reset
@@ -1059,7 +1416,6 @@ export function PreferencesPanel() {
             <span className="text-gray-600">
               💡 Combine <b>mood</b> and <b>length</b> to produce natural, human-like rhythm.
             </span>
-        
           </div>
         </CardContent>
       </Card>

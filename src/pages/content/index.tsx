@@ -1261,7 +1261,7 @@
 
 
 
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState } from "react";
 import {
   Card,
   CardContent,
@@ -1302,13 +1302,7 @@ export default function ContentPage() {
     contentItems,
   } = useContentGeneration();
 
-  const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>();
   const [expandedProjectId, setExpandedProjectId] = useState<string | undefined>();
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    setSelectedProjectId(params.get("project") || undefined);
-  }, []);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;

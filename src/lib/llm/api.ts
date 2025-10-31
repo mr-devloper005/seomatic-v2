@@ -1183,6 +1183,8 @@ const GEMINI_API_KEYS: string[] = ENV_KEYS?.length
       "AIzaSyBY_vj98oCUP72rgPAIIE3OdiaEVbYSXAY",
       "AIzaSyAUEqlBExrhs9hvnGkpF_5t7J-Jkli19b8",
       "AIzaSyAvcKxsTin_o1gtKflkLlU50-xdnEphkuk",
+      "AIzaSyBafUHccMUZ0V1FF1mN23RP2qeNqXIEvYg",
+      "AIzaSyB-wHr42L5f3tWr9bGA6vaK2diy_AVYPU4"
     ];
 
 if (!GEMINI_API_KEYS.length) {

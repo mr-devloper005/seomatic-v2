@@ -7,7 +7,7 @@ import { ErrorBoundary } from "./components/error-boundary";
 function App() {
   return (
     <ErrorBoundary>
-      <ThemeProvider defaultTheme="dark">
+      <ThemeProvider defaultTheme="light">
         <AuthProvider>
           <AppRouter />
           <Toaster />

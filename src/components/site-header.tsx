@@ -25,7 +25,7 @@ export function SiteHeader() {
       case "/settings":
         return "Settings";
       default:
-        return "Dashboard";
+        return "Seomatic";
     }
   };
 

@@ -1191,9 +1191,9 @@ if (!GEMINI_API_KEYS.length) {
   throw new Error("❌ No Gemini API keys configured. Set VITE_GEMINI_API_KEYS or update src/lib/llm/api.ts");
 }
 
-export type ModelName = "gemini-2.5-flash" | "gemini-2.0-flash" | "gemini-2.0-exp";
+export type ModelName = "gemini-2.5-flash" | "gemini-2.0-flash";
 
-const MODEL_POOL: ModelName[] = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-exp"];
+const MODEL_POOL: ModelName[] = ["gemini-2.5-flash", "gemini-2.0-flash"];
 const DEFAULT_STAGGERS_MS = [0, 140, 280] as const;
 const KEY_SELECTION_MODE: "round_robin" | "random" | "random_weighted" = "random_weighted";
 const PER_REQUEST_DISTINCT_KEYS = true;
@@ -1211,7 +1211,6 @@ const FORCE_JSON_MIMETYPE = true;
 const TIMEOUT_BY_MODEL: Record<ModelName, number> = {
   "gemini-2.5-flash": 22_000,
   "gemini-2.0-flash": 24_000,
-  "gemini-2.0-exp": 28_000,
 };
 
 let rrIndex = Math.floor(Math.random() * GEMINI_API_KEYS.length);

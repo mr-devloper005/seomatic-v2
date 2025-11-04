@@ -113,17 +113,8 @@ export default function ContentPage() {
   };
 
   return (
-    <div className="space-y-12 p-8 bg-gradient-to-b from-neutral-50 via-white to-slate-50 text-neutral-900">
+    <div className="space-y-12 p-5 bg-gradient-to-b from-neutral-50 via-white to-slate-50 text-neutral-900">
       {/* Header */}
-      <header className="rounded-3xl border bg-gradient-to-r from-fuchsia-100 via-sky-100 to-indigo-100 shadow-lg p-8">
-        <h1 className="text-4xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 via-sky-600 to-emerald-600">
-          Content Generation
-        </h1>
-        <p className="mt-2 text-sm text-neutral-600 max-w-2xl">
-          Upload Excel files to create premium, human-like SEO content from your
-          keyword sheets.
-        </p>
-      </header>
 
       <PreferencesPanel />
 

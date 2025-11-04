@@ -761,7 +761,387 @@
 // }
 
 
-// src/lib/llm/prompt-engine/prompt.ts
+// // src/lib/llm/prompt-engine/prompt.ts
+// import type { ContentPreferences } from "@/hooks/use-preferences";
+
+// /** ────────────────────────────────────────────────────────────
+//  * Language helpers (generic — label based)
+//  * ──────────────────────────────────────────────────────────── */
+// function languageDirective(label?: string) {
+//   const L = (label || "English (US)").trim();
+//   return [
+//     `LANGUAGE HARD RULES:`,
+//     `- Write ONLY in "${L}" — use its native script.`,
+//     `- Do NOT include a single word from any other language.`,
+//     `- No transliterations. No bilingual phrases. No English fillers.`,
+//     `- If "${L}" has regional variants, keep the style consistent.`,
+//   ].join("\n");
+// }
+
+// /** Tone */
+// function moodDirectives(mood: ContentPreferences["mood"]) {
+//   switch (mood) {
+//     case "Entertaining":  return "Tone: lively, story-driven, conversational.";
+//     case "Informative":   return "Tone: clear, friendly, straight to the point.";
+//     case "Inspirational": return "Tone: warm and encouraging, grounded in real hints.";
+//     case "Humorous":      return "Tone: light and playful; never slapstick or forced.";
+//     case "Emotional":     return "Tone: honest and personal (but not melodramatic).";
+//     case "Educational":   return "Tone: helpful teacher vibe; simple explanations.";
+//     default:              return "Tone: natural conversation with useful specifics.";
+//   }
+// }
+
+// /** Paragraph length bounds */
+// function bounds(target?: number) {
+//   const t = Math.max(60, Number(target || 100));
+//   const min = Math.floor(t * 0.88);
+//   const max = Math.ceil(t * 1.15);
+//   return { min, max, target: t };
+// }
+
+// /** Where to place tokens (keywords) */
+// function tokenPlacementGuide(keywords: string[], includeConclusion: boolean) {
+//   const base =
+//     keywords.length === 1
+//       ? "Place the single token in Section 1 only."
+//       : keywords.length === 2
+//         ? "Place token#1 in Section 1 and token#2 in Section 3 only."
+//         : "Place the first four tokens in Sections 1, 2, 3, and 4 respectively (one per section). Do not place any token elsewhere.";
+//   const tail = includeConclusion ? " Do NOT place any token in the Conclusion section." : "";
+//   return base + tail;
+// }
+
+// /** Build the prompt plan (JSON-only output) */
+// export function buildPlanFromPrefs(params: {
+//   keywords: string[];
+//   prefs: ContentPreferences;
+//   variationId: number;
+// }) {
+//   const { keywords, prefs } = params;
+//   const { min, max, target } = bounds(prefs.paragraphWords);
+
+//   const tokens = keywords.slice(0, 4).map((k) => `[ANCHOR:${k}]`).join(" ");
+//   const placement = tokenPlacementGuide(keywords, !!prefs.includeConclusion);
+
+//   // Sections config
+//   const sectionsLine =
+//     `Title must be 65–70 characters (≥60).\n` +
+//     `Write exactly ${prefs.sectionCount} content sections.\n` +
+//     `Each section is EXACTLY: <h1>Conversational Title</h1><p>ONE paragraph only.</p>\n` +
+//     `Target ~${target} words per paragraph (acceptable ${min}–${max}).\n` +
+//     `Vary paragraph lengths; never identical.`;
+
+//   const conclusionLine = prefs.includeConclusion
+//     ? [
+//         `CONCLUSION RULES (ONLY IF TOGGLED ON BY USER):`,
+//          `CONCLUSION Must be 100+ words long. this is main and conclusion word is needed at the end heading must be conclusion only in selected language `,
+//         `- After the ${prefs.sectionCount} sections, append exactly ONE final Conclusion section.`,
+//         `- Use a natural <h1> heading in the selected language (e.g., "Conclusion" / "निष्कर्ष" / "Заключение").`,
+//         `- Structure is EXACTLY: <h1>...</h1><p>ONE paragraph only.</p>`,
+//         `- Do NOT include any tokens/keywords in the Conclusion.`,
+//         `- Conclusion should not end with a keyword, and should feel human and reflective (not repetitive).`,
+//       ].join("\n")
+//     : `Do NOT write a Conclusion section.`;
+
+//   // Hard constraints for keywords
+//   const keywordHardRules = [
+//     `KEYWORD HARD RULES:`,
+//     `- You will receive machine-visible tokens: ${tokens}`,
+//     `- ${placement}`,
+//     `- Exactly ONE keyword token per paragraph (only where specified).`,
+//     `- Do not include any token in title or any type of heading `,
+//     `- Do NOT repeat a keyword in the same paragraph.`,
+//     `- Do NOT include any other keyword (token or raw text) in that paragraph.`,
+//     `- Do NOT add keyword at the end of a paragraph or line.`,
+//     `- NEVER place a token/keyword at the END of a paragraph; keep at least 3 words AFTER it.`,
+//   ].join("\n");
+
+//   // Enhanced Humanization
+//   const humanize = [
+//     `HUMAN NATURALITY (AI-FREE RULES - STRICTLY FOLLOW):`,
+//     `- Write like a real person sharing knowledge.`,
+//     `- Vary sentence length and starters; avoid robotic cadence.`,
+//     `- Content must be brutally human-like and AI-free: use only simple words and phrases; allow slight imperfections.`,
+//     `- Occasional first-person is okay if natural (e.g., "I've found that...").`,
+//     `- Specifics over fluff; avoid academic clichés.`,
+//     `- Keep it casual, like explaining to a friend.`,
+//     `- Avoid over-formal AI-like phrases (no "in conclusion", no "delve into").`,
+//     `- No lists, no bullets, no numbered steps.`,
+//     `- Use contractions naturally (don't, isn't, it's).`,
+//     `- Include small opinions or observations where relevant.`,
+//     `- Do NOT copy these instructions into the output.`,
+//   ].join("\n");
+
+//   const plan = [
+//     `Return ONLY JSON: {"title": "...", "html": "..."}. No markdown/code fences.`,
+//     ``,
+//     languageDirective(prefs.language),
+//     moodDirectives(prefs.mood),
+//     humanize,
+//     ``,
+//     sectionsLine,
+//     conclusionLine,
+//     ``,
+//     keywordHardRules,
+//     ``,
+//     `Additional user instructions (highest priority): ${prefs.extraInstructions || "(none)"}`,
+//     ``,
+//     `Do NOT copy these instructions into the html. Write ORIGINAL html only.`,
+//   ].join("\n");
+
+//   return plan;
+// }
+
+
+
+// import type { ContentPreferences } from "@/hooks/use-preferences";
+
+// /** ────────────────────────────────────────────────────────────
+//  * Language helpers (generic — label based)
+//  * ──────────────────────────────────────────────────────────── */
+// function languageDirective(label?: string) {
+//   const L = (label || "English (US)").trim();
+//   return [
+//     `LANGUAGE HARD RULES:`,
+//     `- Write ONLY in "${L}" — use its native script.`,
+//     `- Do NOT include a single word from any other language.`,
+//     `- No transliterations. No bilingual phrases.`,
+//     `- If "${L}" has regional variants, keep the style consistent.`,
+//     `PUNCTUATION & MARKUP RULES:`,
+//     `- Avoid leading inverted question/exclamation marks (¿, ¡).`,
+//     `- Do not format headings as questions; prefer declarative headings.`,
+//   ].join("\n");
+// }
+
+// /** Tone */
+// function moodDirectives(mood: ContentPreferences["mood"]) {
+//   switch (mood) {
+//     case "Entertaining":  return "Tone: lively, story-driven, conversational.";
+//     case "Informative":   return "Tone: clear, friendly, straight to the point.";
+//     case "Inspirational": return "Tone: warm and encouraging, grounded in real hints.";
+//     case "Humorous":      return "Tone: light and playful; never slapstick or forced.";
+//     case "Emotional":     return "Tone: honest and personal (but not melodramatic).";
+//     case "Educational":   return "Tone: helpful teacher vibe; simple explanations.";
+//     default:              return "Tone: natural conversation with useful specifics.";
+//   }
+// }
+
+// /** Paragraph length bounds */
+// function bounds(target?: number) {
+//   const t = Math.max(60, Number(target || 100));
+//   const min = Math.floor(t * 0.88);
+//   const max = Math.ceil(t * 1.15);
+//   return { min, max, target: t };
+// }
+
+// /** Where to place tokens (keywords) */
+// function tokenPlacementGuide(keywords: string[], includeConclusion: boolean) {
+//   const base =
+//     keywords.length === 1
+//       ? "Place the single token in Section 1 only."
+//       : keywords.length === 2
+//         ? "Place token#1 in Section 1 and token#2 in Section 3 only."
+//         : "Place the first four tokens in Sections 1, 2, 3, and 4 respectively (one per section). Do not place any token elsewhere.";
+//   const tail = includeConclusion ? " Do NOT place any token in the Conclusion section." : "";
+//   return base + tail;
+// }
+
+// /** Build the prompt plan (JSON-only output) */
+// export function buildPlanFromPrefs(params: {
+//   keywords: string[];
+//   prefs: ContentPreferences;
+//   variationId: number;
+// }) {
+//   const { keywords, prefs } = params;
+//   const { min, max, target } = bounds(prefs.paragraphWords);
+
+//   const tokens = keywords.slice(0, 4).map((k) => `[ANCHOR:${k}]`).join(" ");
+//   const placement = tokenPlacementGuide(keywords, !!prefs.includeConclusion);
+
+//   // Sections config
+//   const sectionsLine =
+//     `Title must be 65–70 characters (≥60).\n` +
+//     `Write exactly ${prefs.sectionCount} content sections.\n` +
+//     `Each section is EXACTLY: <h1>Conversational Title</h1><p>ONE paragraph only.</p>\n` +
+//     `Headings must be declarative (no '?' or '¿' in headings).\n` +
+//     `Target ~${target} words per paragraph (acceptable ${min}–${max}).\n` +
+//     `Vary paragraph lengths; never identical.`;
+
+//   const conclusionLine = prefs.includeConclusion
+//     ? [
+//         `CONCLUSION RULES (ONLY IF TOGGLED ON BY USER):`,
+//         `CONCLUSION Must be 100+ words long. this is main and conclusion word is needed at the end heading must be conclusion only in selected language `,
+//         `- After the ${prefs.sectionCount} sections, append exactly ONE final Conclusion section.`,
+//         `- Use a natural <h1> heading in the selected language (e.g., "Conclusion" / "निष्कर्ष" / "Заключение").`,
+//         `- Structure is EXACTLY: <h1>...</h1><p>ONE paragraph only.</p>`,
+//         `- Do NOT include any tokens/keywords in the Conclusion.`,
+//         `- Conclusion should not end with a keyword, and should feel human and reflective (not repetitive).`,
+//       ].join("\n")
+//     : `Do NOT write a Conclusion section.`;
+
+//   // Hard constraints for keywords
+//   const keywordHardRules = [
+//     `KEYWORD HARD RULES:`,
+//     `- You will receive machine-visible tokens: ${tokens}`,
+//     `- ${placement}`,
+//     `- Exactly ONE keyword token per paragraph (only where specified).`,
+//     `- Do not include any token in title or any type of heading `,
+//     `- Do NOT repeat a keyword in the same paragraph.`,
+//     `- Do NOT include any other keyword (token or raw text) in that paragraph.`,
+//     `- Do NOT add keyword at the end of a paragraph or line.`,
+//     `- NEVER place a token/keyword at the END of a paragraph; keep at least 3 words AFTER it.`,
+//   ].join("\n");
+
+//   const plan = [
+//     `Return ONLY JSON: {"title": "...", "html": "..."}. No markdown/code fences.`,
+//     ``,
+//     languageDirective(prefs.language),
+//     moodDirectives(prefs.mood),
+//     ``,
+//     sectionsLine,
+//     conclusionLine,
+//     ``,
+//     keywordHardRules,
+//     ``,
+//     `Additional user instructions (highest priority): ${prefs.extraInstructions || "(none)"}`,
+//     ``,
+//     `Do NOT copy these instructions into the html. Write ORIGINAL html only.`,
+//   ].join("\n");
+
+//   return plan;
+// }
+
+
+
+// import type { ContentPreferences } from "@/hooks/use-preferences";
+
+// /** ────────────────────────────────────────────────────────────
+//  * Language helpers (generic — label based)
+//  * ──────────────────────────────────────────────────────────── */
+// function languageDirective(label?: string) {
+//   const L = (label || "English (US)").trim();
+//   return [
+//     `LANGUAGE HARD RULES:`,
+//     `- Write ONLY in "${L}" — use its native script.`,
+//     `- Do NOT include a single word from any other language.`,
+//     `- No transliterations. No bilingual phrases.`,
+//     `- If "${L}" has regional variants, keep the style consistent.`,
+//     `PUNCTUATION & MARKUP RULES:`,
+//     `- Avoid leading inverted question/exclamation marks (¿, ¡).`,
+//     `- Do not format headings as questions; prefer declarative headings.`,
+//   ].join("\n");
+// }
+
+// /** Tone */
+// function moodDirectives(mood: ContentPreferences["mood"]) {
+//   switch (mood) {
+//     case "Entertaining":  return "Tone: lively, story-driven, conversational.";
+//     case "Informative":   return "Tone: clear, friendly, straight to the point.";
+//     case "Inspirational": return "Tone: warm and encouraging, grounded in real hints.";
+//     case "Humorous":      return "Tone: light and playful; never slapstick or forced.";
+//     case "Emotional":     return "Tone: honest and personal (but not melodramatic).";
+//     case "Educational":   return "Tone: helpful teacher vibe; simple explanations.";
+//     default:              return "Tone: natural conversation with useful specifics.";
+//   }
+// }
+
+// /** Paragraph length bounds */
+// function bounds(target?: number) {
+//   const t = Math.max(60, Number(target || 100));
+//   const min = Math.floor(t * 0.88);
+//   const max = Math.ceil(t * 1.15);
+//   return { min, max, target: t };
+// }
+
+// /** Where to place tokens (keywords) */
+// function tokenPlacementGuide(keywords: string[], includeConclusion: boolean) {
+//   const base =
+//     keywords.length === 1
+//       ? "Place the single token in Section 1 only."
+//       : keywords.length === 2
+//         ? "Place token#1 in Section 1 and token#2 in Section 3 only."
+//         : "Place the first four tokens in Sections 1, 2, 3, and 4 respectively (one per section). Do not place any token elsewhere.";
+//   const tail = includeConclusion ? " Do NOT place any token in the Conclusion section." : "";
+//   return base + tail;
+// }
+
+// /** Build the prompt plan (JSON-only output) */
+// export function buildPlanFromPrefs(params: {
+//   keywords: string[];
+//   prefs: ContentPreferences;
+//   variationId: number;
+// }) {
+//   const { keywords, prefs } = params;
+//   const { min, max, target } = bounds(prefs.paragraphWords);
+
+//   const tokens = keywords.slice(0, 4).map((k) => `[ANCHOR:${k}]`).join(" ");
+//   const placement = tokenPlacementGuide(keywords, !!prefs.includeConclusion);
+
+//   // Sections config
+//   const sectionsLine =
+//     `Title must be 65–70 characters (≥60).\n` +
+//     `Write exactly ${prefs.sectionCount} content sections.\n` +
+//     `Each section is EXACTLY: <h1>Conversational Title</h1><p>ONE paragraph only.</p>\n` +
+//     `Headings must be declarative (no '?' or '¿' in headings).\n` +
+//     `Target ~${target} words per paragraph (acceptable ${min}–${max}).\n` +
+//     `Vary paragraph lengths; never identical.`;
+
+//   const conclusionLine = prefs.includeConclusion
+//     ? [
+//         `CONCLUSION RULES (ONLY IF TOGGLED ON BY USER):`,
+//         `CONCLUSION Must be 100+ words long. this is main and conclusion word is needed at the end heading must be conclusion only in selected language `,
+//         `- After the ${prefs.sectionCount} sections, append exactly ONE final Conclusion section.`,
+//         `- Use a natural <h1> heading in the selected language (e.g., "Conclusion" / "निष्कर्ष" / "Заключение").`,
+//         `- Structure is EXACTLY: <h1>...</h1><p>ONE paragraph only.</p>`,
+//         `- Do NOT include any tokens/keywords in the Conclusion.`,
+//         `- Conclusion should not end with a keyword, and should feel human and reflective (not repetitive).`,
+//       ].join("\n")
+//     : `Do NOT write a Conclusion section.`;
+
+//   // Hard constraints for keywords
+//   const keywordHardRules = [
+//     `KEYWORD HARD RULES:`,
+//     `- You will receive machine-visible tokens: ${tokens}`,
+//     `- ${placement}`,
+//     `- Exactly ONE keyword token per paragraph (only where specified).`,
+//     `- Do not include any token in title or any type of heading `,
+//     `- Do NOT repeat a keyword in the same paragraph.`,
+//     `- Do NOT include any other keyword (token or raw text) in that paragraph.`,
+//     `- Do NOT add keyword at the end of a paragraph or line.`,
+//     `- NEVER place a token/keyword at the END of a paragraph; keep at least 3 words AFTER it.`,
+//   ].join("\n");
+
+//   // Human-like writing rules to evade AI detectors
+//   const humanizeRules = [
+//     `HUMAN-LIKE WRITING RULES (CRITICAL FOR AUTHENTICITY):`,
+//     `- Write as if you're a real person sharing thoughts: use contractions (I'm, don't, it's), casual phrasing, and occasional filler words like "you know" or "kinda" sparingly.`,
+//     `- Vary sentence lengths wildly: mix short punchy ones (5-10 words) with longer rambling ones (20-30 words). Avoid uniform structure.`,
+//     `- Include subtle imperfections: a rhetorical question mid-paragraph, a brief tangent, or personal anecdote snippet that ties back naturally.`,
+
+//   ].join("\n");
+
+//   const plan = [
+//     `Return ONLY JSON: {"title": "...", "html": "..."}. No markdown/code fences.`,
+//     ``,
+//     languageDirective(prefs.language),
+//     moodDirectives(prefs.mood),
+//     ``,
+//     humanizeRules,
+//     sectionsLine,
+//     conclusionLine,
+//     ``,
+//     keywordHardRules,
+//     ``,
+//     `Additional user instructions (highest priority): ${prefs.extraInstructions || "(none)"}`,
+//     ``,
+//     `Do NOT copy these instructions into the html. Write ORIGINAL html only.`,
+//   ].join("\n");
+
+//   return plan;
+// }
+
+
+
 import type { ContentPreferences } from "@/hooks/use-preferences";
 
 /** ────────────────────────────────────────────────────────────
@@ -773,8 +1153,12 @@ function languageDirective(label?: string) {
     `LANGUAGE HARD RULES:`,
     `- Write ONLY in "${L}" — use its native script.`,
     `- Do NOT include a single word from any other language.`,
-    `- No transliterations. No bilingual phrases. No English fillers.`,
+    `- No transliterations. No bilingual phrases.`,
     `- If "${L}" has regional variants, keep the style consistent.`,
+    `PUNCTUATION & MARKUP RULES:`,
+    `- Avoid leading inverted question/exclamation marks (¿, ¡).`,
+    `- Do not format headings as questions; prefer declarative headings.`,
+    `- Do NOT add exclamation marks (!) or rhetorical question marks (?) unnecessarily.`,
   ].join("\n");
 }
 
@@ -825,23 +1209,34 @@ export function buildPlanFromPrefs(params: {
 
   // Sections config
   const sectionsLine =
-    `Title must be 65–70 characters (≥60).\n` +
+    `Title must be 80–90 characters (≥80).\n` +
     `Write exactly ${prefs.sectionCount} content sections.\n` +
-    `Each section is EXACTLY: <h1>Conversational Title</h1><p>ONE paragraph only.</p>\n` +
+    `Each section is EXACTLY: <h2>Conversational Title</h2><p>ONE paragraph only.</p>\n` +
+    `Headings must be declarative (no '?' or '¿' or '!' in headings).\n` +
     `Target ~${target} words per paragraph (acceptable ${min}–${max}).\n` +
     `Vary paragraph lengths; never identical.`;
 
   const conclusionLine = prefs.includeConclusion
     ? [
         `CONCLUSION RULES (ONLY IF TOGGLED ON BY USER):`,
-         `CONCLUSION Must be 100+ words long. this is main and conclusion word is needed at the end heading must be conclusion only in selected language `,
+        `CONCLUSION Must be 100+ words long. this is main and conclusion word is needed at the end heading must be conclusion only in selected language`,
         `- After the ${prefs.sectionCount} sections, append exactly ONE final Conclusion section.`,
-        `- Use a natural <h1> heading in the selected language (e.g., "Conclusion" / "निष्कर्ष" / "Заключение").`,
-        `- Structure is EXACTLY: <h1>...</h1><p>ONE paragraph only.</p>`,
+        `- Use a natural <h2> heading in the selected language (e.g., "Conclusion" / "निष्कर्ष" / "Заключение").`,
+        `- Structure is EXACTLY: <h2>...</h2><p>ONE paragraph only.</p>`,
         `- Do NOT include any tokens/keywords in the Conclusion.`,
         `- Conclusion should not end with a keyword, and should feel human and reflective (not repetitive).`,
       ].join("\n")
     : `Do NOT write a Conclusion section.`;
+
+  // Human-like writing rules to evade AI detectors
+  const humanizeRules = [
+    `HUMAN-LIKE WRITING RULES (CRITICAL FOR AUTHENTICITY):`,
+    `- Write as if you're a real person sharing thoughts: use contractions (I'm, don't, it's), casual phrasing, and occasional filler words like "you know" or "kinda" sparingly.`,
+    `- Vary sentence lengths: mix short punchy ones (5-10 words) with longer flowing ones (20-30 words). Avoid uniform structure.`,
+    `- Include small, realistic touches (a short anecdote, a minor opinion, a concrete example) to sound natural.`,
+    `- IMPORTANT: Do NOT add rhetorical questions or exclamation marks for effect. Avoid "?" and "!" unless strictly required grammatically.`,
+    `- Keep grammar natural and readable — do not overuse parentheses, em dashes, or ellipses.`,
+  ].join("\n");
 
   // Hard constraints for keywords
   const keywordHardRules = [
@@ -849,27 +1244,11 @@ export function buildPlanFromPrefs(params: {
     `- You will receive machine-visible tokens: ${tokens}`,
     `- ${placement}`,
     `- Exactly ONE keyword token per paragraph (only where specified).`,
-    `- Do not include any token in title or any type of heading `,
+    `- Do not include any token in title or any type of heading.`,
     `- Do NOT repeat a keyword in the same paragraph.`,
     `- Do NOT include any other keyword (token or raw text) in that paragraph.`,
     `- Do NOT add keyword at the end of a paragraph or line.`,
     `- NEVER place a token/keyword at the END of a paragraph; keep at least 3 words AFTER it.`,
-  ].join("\n");
-
-  // Enhanced Humanization
-  const humanize = [
-    `HUMAN NATURALITY (AI-FREE RULES - STRICTLY FOLLOW):`,
-    `- Write like a real person sharing knowledge.`,
-    `- Vary sentence length and starters; avoid robotic cadence.`,
-    `- Content must be brutally human-like and AI-free: use only simple words and phrases; allow slight imperfections.`,
-    `- Occasional first-person is okay if natural (e.g., "I've found that...").`,
-    `- Specifics over fluff; avoid academic clichés.`,
-    `- Keep it casual, like explaining to a friend.`,
-    `- Avoid over-formal AI-like phrases (no "in conclusion", no "delve into").`,
-    `- No lists, no bullets, no numbered steps.`,
-    `- Use contractions naturally (don't, isn't, it's).`,
-    `- Include small opinions or observations where relevant.`,
-    `- Do NOT copy these instructions into the output.`,
   ].join("\n");
 
   const plan = [
@@ -877,8 +1256,8 @@ export function buildPlanFromPrefs(params: {
     ``,
     languageDirective(prefs.language),
     moodDirectives(prefs.mood),
-    humanize,
     ``,
+    humanizeRules,
     sectionsLine,
     conclusionLine,
     ``,

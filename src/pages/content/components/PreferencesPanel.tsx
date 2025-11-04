@@ -88,9 +88,6 @@
 //   );
 // }
 
-
-
-
 // import { useMemo, useState } from "react";
 // import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 // import { Button } from "@/components/ui/button";
@@ -286,7 +283,6 @@
 //     </Card>
 //   );
 // }
-
 
 // import React, { useMemo, useState } from "react";
 // import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -721,8 +717,6 @@
 
 // export default PreferencesPanel;
 
-
-
 // import React, { useMemo, useState } from "react";
 // import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 // import { Button } from "@/components/ui/button";
@@ -837,7 +831,7 @@
 //     setCustomModeEnabled,
 //     setArticleCount,
 //     setLanguage,
-    
+
 //     reset,
 //   } = useContentPreferences();
 
@@ -1059,16 +1053,13 @@
 //             <span className="text-gray-600">
 //               💡 Combine <b>mood</b> and <b>length</b> to produce natural, human-like rhythm.
 //             </span>
-        
+
 //           </div>
 //         </CardContent>
 //       </Card>
 //     </GradientFrame>
 //   );
 // }
-
-
-
 
 // src/components/PreferencesPanel.tsx
 import React, { useMemo, useState } from "react";
@@ -1103,17 +1094,106 @@ const PARA_OPTS: ParagraphWordTarget[] = [80, 100, 120, 150];
 const SEC_OPTS: SectionCount[] = [4, 5, 6];
 const KW_OPTS: KeywordMode[] = [1, 2, 4];
 const LANGS = [
-  "English (US)",
   "English (UK)",
+  "English (US)",
   "Hindi",
-  "Spanish",
+  "Spanish (ES)",
+  "Spanish (LA)",
   "French",
   "German",
   "Italian",
-  "Portuguese",
+  "Portuguese (BR)",
+  "Portuguese (PT)",
   "Russian",
   "Arabic",
+  "Bengali",
+  "Punjabi",
+  "Urdu",
+  "Gujarati",
+  "Marathi",
+  "Tamil",
+  "Telugu",
+  "Kannada",
+  "Malayalam",
+  "Odia",
+  "Assamese",
+  "Maithili",
+  "Nepali",
+  "Sinhala",
+  "Thai",
+  "Vietnamese",
+  "Indonesian",
+  "Malay",
+  "Filipino",
+  "Turkish",
+  "Persian",
+  "Hebrew",
+  "Ukrainian",
+  "Polish",
+  "Czech",
+  "Slovak",
+  "Hungarian",
+  "Romanian",
+  "Bulgarian",
+  "Serbian",
+  "Croatian",
+  "Greek",
+  "Dutch",
+  "Swedish",
+  "Norwegian",
+  "Danish",
+  "Finnish",
+  "Estonian",
+  "Lithuanian",
+  "Latvian",
+  "Chinese (Simplified)",
+  "Chinese (Traditional)",
   "Japanese",
+  "Korean",
+  "Afrikaans",
+  "Swahili",
+  "Zulu",
+  "Xhosa",
+  "Amharic",
+  "Hausa",
+  "Yoruba",
+  "Igbo",
+  "Irish",
+  "Scottish Gaelic",
+  "Welsh",
+  "Basque",
+  "Catalan",
+  "Galician",
+  "Slovenian",
+  "Albanian",
+  "Armenian",
+  "Azerbaijani",
+  "Georgian",
+  "Kazakh",
+  "Kyrgyz",
+  "Uzbek",
+  "Tajik",
+  "Mongolian",
+  "Khmer",
+  "Lao",
+  "Burmese",
+  "Pashto",
+  "Kurdish",
+  "Somali",
+  "Tigrinya",
+  "Haitian Creole",
+  "Luxembourgish",
+  "Icelandic",
+  "Macedonian",
+  "Bosnian",
+  "Belarusian",
+  "Malayalam (Manglish)",
+  "Sindhi",
+  "Konkani",
+  "Bodo",
+  "Dogri",
+  "Santali",
+  "Kashmiri",
 ];
 
 /** Compact segmented buttons */
@@ -1136,8 +1216,7 @@ function Segmented<T extends string | number>({
         "inline-flex w-full flex-wrap gap-2 rounded-xl border border-gray-200 bg-white p-1.5 shadow-sm",
         "hover:shadow-md transition-all duration-200",
         className
-      )}
-    >
+      )}>
       {items.map((it) => {
         const active = it === value;
         return (
@@ -1151,8 +1230,7 @@ function Segmented<T extends string | number>({
               active
                 ? "bg-gradient-to-r from-blue-500 to-green-400 text-white shadow-sm"
                 : "border border-transparent text-gray-700 hover:text-blue-600 hover:bg-orange-50"
-            )}
-          >
+            )}>
             {render ? render(it) : String(it)}
           </Button>
         );
@@ -1185,13 +1263,14 @@ export function PreferencesPanel() {
     setCustomModeEnabled,
     setArticleCount,
     setLanguage,
-    save,    // ✅ now used
+    save, // ✅ now used
     reset,
   } = useContentPreferences();
 
   const [langQuery, setLangQuery] = useState("");
   const langList = useMemo(
-    () => LANGS.filter((l) => l.toLowerCase().includes(langQuery.toLowerCase())),
+    () =>
+      LANGS.filter((l) => l.toLowerCase().includes(langQuery.toLowerCase())),
     [langQuery]
   );
   const dirty = JSON.stringify(prefs) !== JSON.stringify(savedPrefs);
@@ -1209,7 +1288,8 @@ export function PreferencesPanel() {
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
               <CardTitle className="text-2xl font-bold tracking-tight flex items-center gap-2 text-blue-700">
-                <Sparkles className="h-5 w-5 text-green-500" /> Content Preferences
+                <Sparkles className="h-5 w-5 text-green-500" /> Content
+                Preferences
               </CardTitle>
               <p className="mt-1 text-sm text-gray-500">
                 Fine-tune how your articles should feel, read, and look.
@@ -1222,8 +1302,7 @@ export function PreferencesPanel() {
                 dirty
                   ? "bg-green-500 text-white"
                   : "border border-gray-300 text-gray-600 bg-white"
-              )}
-            >
+              )}>
               {dirty ? "Unsaved Changes" : "Up to Date"}
             </Badge>
           </div>
@@ -1296,8 +1375,7 @@ export function PreferencesPanel() {
                 />
                 <Label
                   htmlFor="include-conclusion"
-                  className="text-sm font-medium text-gray-700"
-                >
+                  className="text-sm font-medium text-gray-700">
                   Include Conclusion
                 </Label>
               </div>
@@ -1306,16 +1384,21 @@ export function PreferencesPanel() {
             {/* Custom Count */}
             <section>
               <Label className="text-sm font-semibold text-gray-800 flex items-center gap-2 mb-2">
-                <Wand2 className="h-4 w-4 text-green-500" /> Custom Article Count
+                <Wand2 className="h-4 w-4 text-green-500" /> Custom Article
+                Count
               </Label>
               <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 shadow-inner">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
                     <Switch
                       checked={prefs.customModeEnabled}
-                      onCheckedChange={(v: boolean) => setCustomModeEnabled(!!v)}
+                      onCheckedChange={(v: boolean) =>
+                        setCustomModeEnabled(!!v)
+                      }
                     />
-                    <span className="text-sm text-gray-700">Enable random reuse</span>
+                    <span className="text-sm text-gray-700">
+                      Enable random reuse
+                    </span>
                   </div>
                   {prefs.customModeEnabled && (
                     <Badge className="bg-green-500 text-white">Active</Badge>
@@ -1367,8 +1450,7 @@ export function PreferencesPanel() {
                           active
                             ? "bg-gradient-to-r from-green-400/20 to-blue-400/20 text-gray-900 font-medium"
                             : "hover:bg-orange-50"
-                        )}
-                      >
+                        )}>
                         <span>{l}</span>
                         {active && <Check className="h-4 w-4 text-green-600" />}
                       </button>
@@ -1396,15 +1478,16 @@ export function PreferencesPanel() {
                 <Button
                   className="rounded-2xl bg-gradient-to-r from-blue-500 to-green-400 text-white hover:from-blue-600 hover:to-orange-400 transition-all"
                   onClick={handleSave}
-                  disabled={!dirty}
-                >
+                  disabled={!dirty}>
                   {dirty ? "Save" : "Saved"}
                 </Button>
                 <Button
                   variant="outline"
-                  onClick={() => { reset(); toast.info("Preferences reset"); }}
-                  className="rounded-2xl border-gray-300 text-gray-700 hover:bg-orange-50"
-                >
+                  onClick={() => {
+                    reset();
+                    toast.info("Preferences reset");
+                  }}
+                  className="rounded-2xl border-gray-300 text-gray-700 hover:bg-orange-50">
                   Reset
                 </Button>
               </div>
@@ -1414,7 +1497,8 @@ export function PreferencesPanel() {
           {/* Footer */}
           <div className="mt-8 rounded-2xl border border-gray-200 bg-gray-50 p-4 text-sm flex flex-wrap items-center justify-between shadow-sm">
             <span className="text-gray-600">
-              💡 Combine <b>mood</b> and <b>length</b> to produce natural, human-like rhythm.
+              💡 Combine <b>mood</b> and <b>length</b> to produce natural,
+              human-like rhythm.
             </span>
           </div>
         </CardContent>

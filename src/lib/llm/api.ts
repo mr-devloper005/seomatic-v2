@@ -1176,7 +1176,7 @@ const ENV_KEYS = (import.meta.env.VITE_GEMINI_API_KEYS as string | undefined)
 const GEMINI_API_KEYS: string[] = ENV_KEYS?.length
   ? ENV_KEYS
   : [
-      "AIzaSyAiuEsxN0T5okxCpWE4mTQ5eReyX5512uA",
+   "AIzaSyAiuEsxN0T5okxCpWE4mTQ5eReyX5512uA",
       "AIzaSyDJzsTMXS53918qwV6Y3RBOXbJ9uPQ6NUY",
       "AIzaSyALWTZHYpIEb5INMnICR0VzEEV8Nhv0SVA",
       "AIzaSyCsYwyhhDMs8v90Mfbb_BosautLkf61urQ",
@@ -1184,7 +1184,17 @@ const GEMINI_API_KEYS: string[] = ENV_KEYS?.length
       "AIzaSyAUEqlBExrhs9hvnGkpF_5t7J-Jkli19b8",
       "AIzaSyAvcKxsTin_o1gtKflkLlU50-xdnEphkuk",
       "AIzaSyBafUHccMUZ0V1FF1mN23RP2qeNqXIEvYg",
-      "AIzaSyB-wHr42L5f3tWr9bGA6vaK2diy_AVYPU4"
+      "AIzaSyB-wHr42L5f3tWr9bGA6vaK2diy_AVYPU4",
+"AIzaSyA58HmYWxGlRLcg8SPXQOreLUuWpaVQVRk",
+      "AIzaSyDMLKj8FWf0O3bbp33LV8bYXKsLbCCkky0",
+      "AIzaSyBEf6ycxvycOyPfVRBikYoIFLv_liuprlU",
+      "AIzaSyBCf6NEWEPJh1o_IvRScxMw-MMwCHmUCKQ",
+      "AIzaSyAmD2KhxCUVg3HrSZ-bfkGW6tRLTiSVQso",
+      "AIzaSyBJO7HKv5ItDVJU4X-D3Ie9k_rj3Bh2AiA",
+      "AIzaSyC7_u03_UyEQCwxJQnQa5Ns0WjH0K72RtQ",
+      "AIzaSyCl00SzUYIrOwfQpOyAnairqPrTXBAMBR4",
+      "AIzaSyBMy6qGhOO52OhCNctqTO_b5ioskAuM_xA",
+      "AIzaSyCwmIFaDMH1Snsjrukidb1RyuH0ghbDBhg"
     ];
 
 if (!GEMINI_API_KEYS.length) {

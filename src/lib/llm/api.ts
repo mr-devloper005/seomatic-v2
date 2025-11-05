@@ -1607,7 +1607,7 @@ export async function generateJSONTitleHtml({
       }
 
       const rawTitle = typeof parsed.title === "string" ? parsed.title : keywordArray[0];
-      const title = (rawTitle || keywordArray[0]).trim().slice(0, 70);
+      const title = (rawTitle || keywordArray[0]).trim().slice(0, 120);
       const html = String(parsed.html ?? "").trim();
       if (!html) throw new Error("LLM returned empty html");
 
@@ -1621,7 +1621,7 @@ export async function generateJSONTitleHtml({
   }
 
   console.warn("[LLM] Falling back after retries:", lastError?.message || lastError);
-  const fallbackTitle = `${keywordArray[0] || "Untitled"} — draft`.slice(0, 70);
+  const fallbackTitle = `${keywordArray[0] || "Untitled"} — draft`.slice(0, 120);
   const fallbackHtml = `<h1>${fallbackTitle}</h1><p>${instructions.trim().slice(0, 220)}...</p>` +
     `<ul>${keywordArray.map((kw) => `<li>[ANCHOR:${kw}]</li>`).join("")}</ul>`;
 

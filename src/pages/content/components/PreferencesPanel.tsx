@@ -1061,7 +1061,564 @@
 //   );
 // }
 
-// src/components/PreferencesPanel.tsx
+// // src/components/PreferencesPanel.tsx
+// import React, { useMemo, useState } from "react";
+// import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+// import { Button } from "@/components/ui/button";
+// import { Textarea } from "@/components/ui/textarea";
+// import { Input } from "@/components/ui/input";
+// import { Label } from "@/components/ui/label";
+// import { Switch } from "@/components/ui/switch";
+// import { Slider } from "@/components/ui/slider";
+// import { Badge } from "@/components/ui/badge";
+// import { cn } from "@/lib/utils";
+// import { toast } from "sonner";
+// import {
+//   useContentPreferences,
+//   type ParagraphWordTarget,
+//   type SectionCount,
+//   type ContentMood,
+//   type KeywordMode,
+//   type TotalContentWords,
+//   type TitleLength,
+// } from "@/hooks/use-preferences";
+// import { Check, Globe2, Sparkles, Wand2 } from "lucide-react";
+
+// const MOODS: ContentMood[] = [
+//   "Entertaining",
+//   "Informative",
+//   "Inspirational",
+//   "Humorous",
+//   "Emotional",
+//   "Educational",
+// ];
+// const PARA_OPTS: ParagraphWordTarget[] = [80, 100, 120, 150];
+// const SEC_OPTS: SectionCount[] = [4, 5, 6];
+// const KW_OPTS: KeywordMode[] = [1, 2, 4];
+// const TOTAL_WORDS_OPTS: TotalContentWords[] = [200, 500, 800, 1000, 1200, 1500];
+// const TITLE_LENGTH_OPTS: TitleLength[] = [70, 100, 130, 150];
+// const LANGS = [
+//   "English (UK)",
+//   "English (US)",
+//   "Hindi",
+//   "Spanish (ES)",
+//   "Spanish (LA)",
+//   "French",
+//   "German",
+//   "Italian",
+//   "Portuguese (BR)",
+//   "Portuguese (PT)",
+//   "Russian",
+//   "Arabic",
+//   "Bengali",
+//   "Punjabi",
+//   "Urdu",
+//   "Gujarati",
+//   "Marathi",
+//   "Tamil",
+//   "Telugu",
+//   "Kannada",
+//   "Malayalam",
+//   "Odia",
+//   "Assamese",
+//   "Maithili",
+//   "Nepali",
+//   "Sinhala",
+//   "Thai",
+//   "Vietnamese",
+//   "Indonesian",
+//   "Malay",
+//   "Filipino",
+//   "Turkish",
+//   "Persian",
+//   "Hebrew",
+//   "Ukrainian",
+//   "Polish",
+//   "Czech",
+//   "Slovak",
+//   "Hungarian",
+//   "Romanian",
+//   "Bulgarian",
+//   "Serbian",
+//   "Croatian",
+//   "Greek",
+//   "Dutch",
+//   "Swedish",
+//   "Norwegian",
+//   "Danish",
+//   "Finnish",
+//   "Estonian",
+//   "Lithuanian",
+//   "Latvian",
+//   "Chinese (Simplified)",
+//   "Chinese (Traditional)",
+//   "Japanese",
+//   "Korean",
+//   "Afrikaans",
+//   "Swahili",
+//   "Zulu",
+//   "Xhosa",
+//   "Amharic",
+//   "Hausa",
+//   "Yoruba",
+//   "Igbo",
+//   "Irish",
+//   "Scottish Gaelic",
+//   "Welsh",
+//   "Basque",
+//   "Catalan",
+//   "Galician",
+//   "Slovenian",
+//   "Albanian",
+//   "Armenian",
+//   "Azerbaijani",
+//   "Georgian",
+//   "Kazakh",
+//   "Kyrgyz",
+//   "Uzbek",
+//   "Tajik",
+//   "Mongolian",
+//   "Khmer",
+//   "Lao",
+//   "Burmese",
+//   "Pashto",
+//   "Kurdish",
+//   "Somali",
+//   "Tigrinya",
+//   "Haitian Creole",
+//   "Luxembourgish",
+//   "Icelandic",
+//   "Macedonian",
+//   "Bosnian",
+//   "Belarusian",
+//   "Malayalam (Manglish)",
+//   "Sindhi",
+//   "Konkani",
+//   "Bodo",
+//   "Dogri",
+//   "Santali",
+//   "Kashmiri",
+// ];
+
+// /** Compact segmented buttons */
+// function Segmented<T extends string | number>({
+//   value,
+//   onChange,
+//   items,
+//   render,
+//   className,
+// }: {
+//   value: T;
+//   onChange: (v: T) => void;
+//   items: T[];
+//   render?: (v: T) => React.ReactNode;
+//   className?: string;
+// }) {
+//   return (
+//     <div
+//       className={cn(
+//         "inline-flex w-full flex-wrap gap-2 rounded-xl border border-gray-200 bg-white p-1.5 shadow-sm",
+//         "hover:shadow-md transition-all duration-200",
+//         className
+//       )}>
+//       {items.map((it) => {
+//         const active = it === value;
+//         return (
+//           <Button
+//             key={String(it)}
+//             size="sm"
+//             variant={active ? "default" : "ghost"}
+//             onClick={() => onChange(it)}
+//             className={cn(
+//               "rounded-lg px-3 py-1.5 text-sm transition-all",
+//               active
+//                 ? "bg-gradient-to-r from-blue-500 to-green-400 text-white shadow-sm"
+//                 : "border border-transparent text-gray-700 hover:text-blue-600 hover:bg-orange-50"
+//             )}>
+//             {render ? render(it) : String(it)}
+//           </Button>
+//         );
+//       })}
+//     </div>
+//   );
+// }
+
+// /** Subtle gradient border frame */
+// function GradientFrame({ children }: { children: React.ReactNode }) {
+//   return (
+//     <div className="relative rounded-3xl p-[1px] bg-gradient-to-r from-gray-200 via-green-200/40 to-orange-200/40">
+//       <div className="relative rounded-3xl bg-white shadow-[0_8px_24px_rgba(0,0,0,0.06)]">
+//         {children}
+//       </div>
+//     </div>
+//   );
+// }
+
+// export function PreferencesPanel() {
+//   const {
+//     prefs,
+//     savedPrefs,
+//     setKeywordMode,
+//     setExtraInstructions,
+//     setMood,
+//     setParagraphWords,
+//     setSectionCount,
+//     setIncludeConclusion,
+//     setCustomModeEnabled,
+//     setArticleCount,
+//     setLanguage,
+//     setTotalContentWords,
+//     setTitleLength,
+//     setIncludeBulletPoints,
+//     setIncludeTables,
+//     setIncludeEmojis,
+//     setIncludeBoxesQuotesHighlights,
+//     setIncludeQandA,
+//     save, // ✅ now used
+//     reset,
+//   } = useContentPreferences();
+
+//   const [langQuery, setLangQuery] = useState("");
+//   const langList = useMemo(
+//     () =>
+//       LANGS.filter((l) => l.toLowerCase().includes(langQuery.toLowerCase())),
+//     [langQuery]
+//   );
+//   const dirty = JSON.stringify(prefs) !== JSON.stringify(savedPrefs);
+
+//   const handleSave = () => {
+//     save();
+//     toast.success("Preferences saved");
+//   };
+
+//   return (
+//     <GradientFrame>
+//       <Card className="relative border-0 shadow-xl rounded-3xl">
+//         {/* Header */}
+//         <CardHeader className="pb-4 pt-6 px-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-green-50 rounded-t-3xl">
+//           <div className="flex items-center justify-between flex-wrap gap-3">
+//             <div>
+//               <CardTitle className="text-2xl font-bold tracking-tight flex items-center gap-2 text-blue-700">
+//                 <Sparkles className="h-5 w-5 text-green-500" /> Content
+//                 Preferences
+//               </CardTitle>
+//               <p className="mt-1 text-sm text-gray-500">
+//                 Fine-tune how your articles should feel, read, and look.
+//               </p>
+//             </div>
+//             <Badge
+//               variant={dirty ? "default" : "outline"}
+//               className={cn(
+//                 "rounded-full px-3 py-1 text-xs",
+//                 dirty
+//                   ? "bg-green-500 text-white"
+//                   : "border border-gray-300 text-gray-600 bg-white"
+//               )}>
+//               {dirty ? "Unsaved Changes" : "Up to Date"}
+//             </Badge>
+//           </div>
+//         </CardHeader>
+
+//         {/* Main Content */}
+//         <CardContent className="px-6 py-8">
+//           <div className="grid gap-8 md:grid-cols-2 xl:grid-cols-2">
+//             {/* Keyword Mode */}
+//             <section>
+//               <Label className="text-sm font-semibold text-gray-800 mb-2 block">
+//                 Keyword Mode
+//               </Label>
+//               <Segmented
+//                 value={prefs.keywordMode}
+//                 onChange={(m) => setKeywordMode(m as KeywordMode)}
+//                 items={KW_OPTS}
+//                 render={(m) => (
+//                   <span>
+//                     {m} keyword{Number(m) > 1 ? "s" : ""} / article
+//                   </span>
+//                 )}
+//               />
+//               <p className="text-xs text-gray-500 mt-2">
+//                 Defines how many keyword sets per generated article.
+//               </p>
+//             </section>
+
+//             {/* Mood */}
+//             <section>
+//               <Label className="text-sm font-semibold text-gray-800 mb-2 block">
+//                 Content Mood
+//               </Label>
+//               <Segmented
+//                 value={prefs.mood}
+//                 onChange={(m) => setMood(m as ContentMood)}
+//                 items={MOODS}
+//               />
+//             </section>
+
+//             {/* Paragraph Words */}
+//             <section>
+//               <Label className="text-sm font-semibold text-gray-800 mb-2 block">
+//                 Paragraph Length
+//               </Label>
+//               <Segmented
+//                 value={prefs.paragraphWords}
+//                 onChange={(w) => setParagraphWords(w as ParagraphWordTarget)}
+//                 items={PARA_OPTS}
+//                 render={(w) => <span>{w} words</span>}
+//               />
+//             </section>
+
+//             {/* Structure */}
+//             <section>
+//               <Label className="text-sm font-semibold text-gray-800 mb-2 block">
+//                 Structure & Sections
+//               </Label>
+//               <Segmented
+//                 value={prefs.sectionCount}
+//                 onChange={(n) => setSectionCount(n as SectionCount)}
+//                 items={SEC_OPTS}
+//                 render={(n) => <span>{n} sections</span>}
+//               />
+//               <div className="mt-3 flex items-center gap-3 border border-gray-200 rounded-2xl p-3 bg-gray-50 hover:border-blue-300 transition">
+//                 <Switch
+//                   checked={prefs.includeConclusion}
+//                   onCheckedChange={(v: boolean) => setIncludeConclusion(!!v)}
+//                   id="include-conclusion"
+//                 />
+//                 <Label
+//                   htmlFor="include-conclusion"
+//                   className="text-sm font-medium text-gray-700">
+//                   Include Conclusion
+//                 </Label>
+//               </div>
+//             </section>
+
+//             {/* Custom Count */}
+//             <section>
+//               <Label className="text-sm font-semibold text-gray-800 flex items-center gap-2 mb-2">
+//                 <Wand2 className="h-4 w-4 text-green-500" /> Custom Article
+//                 Count
+//               </Label>
+//               <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 shadow-inner">
+//                 <div className="flex items-center justify-between mb-3">
+//                   <div className="flex items-center gap-2">
+//                     <Switch
+//                       checked={prefs.customModeEnabled}
+//                       onCheckedChange={(v: boolean) =>
+//                         setCustomModeEnabled(!!v)
+//                       }
+//                     />
+//                     <span className="text-sm text-gray-700">
+//                       Enable random reuse
+//                     </span>
+//                   </div>
+//                   {prefs.customModeEnabled && (
+//                     <Badge className="bg-green-500 text-white">Active</Badge>
+//                   )}
+//                 </div>
+//                 <Slider
+//                   value={[prefs.articleCount]}
+//                   min={1}
+//                   max={200}
+//                   step={1}
+//                   onValueChange={([v]: [number]) => setArticleCount(v)}
+//                   className="mb-3"
+//                 />
+//                 <Input
+//                   type="number"
+//                   min={1}
+//                   max={200}
+//                   value={prefs.articleCount}
+//                   onChange={(e) => setArticleCount(Number(e.target.value))}
+//                   className="w-24 text-center border-gray-300"
+//                 />
+//               </div>
+//             </section>
+
+//             {/* Language */}
+//             <section>
+//               <Label className="text-sm font-semibold text-gray-800 flex items-center gap-2 mb-2">
+//                 <Globe2 className="h-4 w-4 text-blue-500" /> Language
+//               </Label>
+//               <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3 shadow-sm">
+//                 <Input
+//                   value={langQuery}
+//                   onChange={(e) => setLangQuery(e.target.value)}
+//                   placeholder="Search language..."
+//                   className="mb-2 border-gray-300"
+//                 />
+//                 <div className="max-h-44 overflow-auto rounded-lg border border-gray-200">
+//                   {langList.map((l) => {
+//                     const active = prefs.language === l;
+//                     return (
+//                       <button
+//                         key={l}
+//                         onClick={() => {
+//                           setLanguage(l);
+//                           setLangQuery("");
+//                         }}
+//                         className={cn(
+//                           "flex w-full items-center justify-between px-3 py-2 text-left text-sm transition",
+//                           active
+//                             ? "bg-gradient-to-r from-green-400/20 to-blue-400/20 text-gray-900 font-medium"
+//                             : "hover:bg-orange-50"
+//                         )}>
+//                         <span>{l}</span>
+//                         {active && <Check className="h-4 w-4 text-green-600" />}
+//                       </button>
+//                     );
+//                   })}
+//                 </div>
+//                 <p className="mt-2 text-xs text-gray-600">
+//                   Selected: <strong>{prefs.language}</strong>
+//                 </p>
+//               </div>
+//             </section>
+
+//             {/* Total Content Words */}
+//             <section>
+//               <Label className="text-sm font-semibold text-gray-800 mb-2 block">
+//                 Total Content Words
+//               </Label>
+//               <Segmented
+//                 value={prefs.totalContentWords}
+//                 onChange={(w) => setTotalContentWords(w as TotalContentWords)}
+//                 items={TOTAL_WORDS_OPTS}
+//                 render={(w) => <span>{w} words</span>}
+//               />
+//               <p className="text-xs text-gray-500 mt-2">
+//                 Target total word count for the entire article.
+//               </p>
+//             </section>
+
+//             {/* Title Length */}
+//             <section>
+//               <Label className="text-sm font-semibold text-gray-800 mb-2 block">
+//                 Title Length
+//               </Label>
+//               <Segmented
+//                 value={prefs.titleLength}
+//                 onChange={(l) => setTitleLength(l as TitleLength)}
+//                 items={TITLE_LENGTH_OPTS}
+//                 render={(l) => <span>{l} characters</span>}
+//               />
+//               <p className="text-xs text-gray-500 mt-2">
+//                 Maximum character length for the article title.
+//               </p>
+//             </section>
+
+//             {/* Content Format Options */}
+//             <section className="xl:col-span-2">
+//               <Label className="text-sm font-semibold text-gray-800 mb-3 block">
+//                 Content Format Options
+//               </Label>
+//               <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 shadow-sm">
+//                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+//                   <div className="flex items-center gap-3 border border-gray-200 rounded-xl p-3 bg-white hover:border-blue-300 transition">
+//                     <Switch
+//                       checked={prefs.includeBulletPoints}
+//                       onCheckedChange={(v: boolean) => setIncludeBulletPoints(!!v)}
+//                       id="include-bullets"
+//                     />
+//                     <Label htmlFor="include-bullets" className="text-sm font-medium text-gray-700 cursor-pointer">
+//                       Bullet Points
+//                     </Label>
+//                   </div>
+
+//                   <div className="flex items-center gap-3 border border-gray-200 rounded-xl p-3 bg-white hover:border-blue-300 transition">
+//                     <Switch
+//                       checked={prefs.includeTables}
+//                       onCheckedChange={(v: boolean) => setIncludeTables(!!v)}
+//                       id="include-tables"
+//                     />
+//                     <Label htmlFor="include-tables" className="text-sm font-medium text-gray-700 cursor-pointer">
+//                       Tables
+//                     </Label>
+//                   </div>
+
+//                   <div className="flex items-center gap-3 border border-gray-200 rounded-xl p-3 bg-white hover:border-blue-300 transition">
+//                     <Switch
+//                       checked={prefs.includeEmojis}
+//                       onCheckedChange={(v: boolean) => setIncludeEmojis(!!v)}
+//                       id="include-emojis"
+//                     />
+//                     <Label htmlFor="include-emojis" className="text-sm font-medium text-gray-700 cursor-pointer">
+//                       Emojis
+//                     </Label>
+//                   </div>
+
+//                   <div className="flex items-center gap-3 border border-gray-200 rounded-xl p-3 bg-white hover:border-blue-300 transition">
+//                     <Switch
+//                       checked={prefs.includeBoxesQuotesHighlights}
+//                       onCheckedChange={(v: boolean) => setIncludeBoxesQuotesHighlights(!!v)}
+//                       id="include-boxes"
+//                     />
+//                     <Label htmlFor="include-boxes" className="text-sm font-medium text-gray-700 cursor-pointer">
+//                       Boxes, Quotes & Highlights
+//                     </Label>
+//                   </div>
+
+//                   <div className="flex items-center gap-3 border border-gray-200 rounded-xl p-3 bg-white hover:border-blue-300 transition">
+//                     <Switch
+//                       checked={prefs.includeQandA}
+//                       onCheckedChange={(v: boolean) => setIncludeQandA(!!v)}
+//                       id="include-qa"
+//                     />
+//                     <Label htmlFor="include-qa" className="text-sm font-medium text-gray-700 cursor-pointer">
+//                       Question & Answers
+//                     </Label>
+//                   </div>
+//                 </div>
+//               </div>
+//             </section>
+
+//             {/* Instructions */}
+//             <section className="xl:col-span-2">
+//               <Label className="text-sm font-semibold text-gray-800 mb-2 block">
+//                 Additional Instructions
+//               </Label>
+//               <Textarea
+//                 value={prefs.extraInstructions}
+//                 onChange={(e) => setExtraInstructions(e.target.value)}
+//                 placeholder="Describe tone, structure, audience, or must-include ideas..."
+//                 className="min-h-[140px] border-gray-300 rounded-2xl bg-white shadow-sm hover:shadow-md transition-all"
+//               />
+//               <div className="flex gap-2 mt-3">
+//                 <Button
+//                   className="rounded-2xl bg-gradient-to-r from-blue-500 to-green-400 text-white hover:from-blue-600 hover:to-orange-400 transition-all"
+//                   onClick={handleSave}
+//                   disabled={!dirty}>
+//                   {dirty ? "Save" : "Saved"}
+//                 </Button>
+//                 <Button
+//                   variant="outline"
+//                   onClick={() => {
+//                     reset();
+//                     toast.info("Preferences reset");
+//                   }}
+//                   className="rounded-2xl border-gray-300 text-gray-700 hover:bg-orange-50">
+//                   Reset
+//                 </Button>
+//               </div>
+//             </section>
+//           </div>
+
+//           {/* Footer */}
+//           <div className="mt-8 rounded-2xl border border-gray-200 bg-gray-50 p-4 text-sm flex flex-wrap items-center justify-between shadow-sm">
+//             <span className="text-gray-600">
+//               💡 Combine <b>mood</b> and <b>length</b> to produce natural,
+//               human-like rhythm.
+//             </span>
+//           </div>
+//         </CardContent>
+//       </Card>
+//     </GradientFrame>
+//   );
+// }
+
+
+
+
+
 import React, { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -1076,9 +1633,10 @@ import { toast } from "sonner";
 import {
   useContentPreferences,
   type ParagraphWordTarget,
-  type SectionCount,
   type ContentMood,
   type KeywordMode,
+  type TotalContentWords,
+  type TitleLength,
 } from "@/hooks/use-preferences";
 import { Check, Globe2, Sparkles, Wand2 } from "lucide-react";
 
@@ -1090,9 +1648,14 @@ const MOODS: ContentMood[] = [
   "Emotional",
   "Educational",
 ];
+
 const PARA_OPTS: ParagraphWordTarget[] = [80, 100, 120, 150];
-const SEC_OPTS: SectionCount[] = [4, 5, 6];
 const KW_OPTS: KeywordMode[] = [1, 2, 4];
+const TOTAL_WORDS_OPTS: TotalContentWords[] = [
+  200, 500, 800, 1000, 1200, 1500,
+];
+const TITLE_LENGTH_OPTS: TitleLength[] = [70, 100, 130, 150];
+
 const LANGS = [
   "English (UK)",
   "English (US)",
@@ -1216,7 +1779,8 @@ function Segmented<T extends string | number>({
         "inline-flex w-full flex-wrap gap-2 rounded-xl border border-gray-200 bg-white p-1.5 shadow-sm",
         "hover:shadow-md transition-all duration-200",
         className
-      )}>
+      )}
+    >
       {items.map((it) => {
         const active = it === value;
         return (
@@ -1230,7 +1794,8 @@ function Segmented<T extends string | number>({
               active
                 ? "bg-gradient-to-r from-blue-500 to-green-400 text-white shadow-sm"
                 : "border border-transparent text-gray-700 hover:text-blue-600 hover:bg-orange-50"
-            )}>
+            )}
+          >
             {render ? render(it) : String(it)}
           </Button>
         );
@@ -1258,22 +1823,33 @@ export function PreferencesPanel() {
     setExtraInstructions,
     setMood,
     setParagraphWords,
-    setSectionCount,
     setIncludeConclusion,
     setCustomModeEnabled,
     setArticleCount,
     setLanguage,
-    save, // ✅ now used
+    setTotalContentWords,
+    setTitleLength,
+    setIncludeBulletPoints,
+    setIncludeTables,
+    setIncludeEmojis,
+    setIncludeBoxesQuotesHighlights,
+    setIncludeQandA,
+    setBrandDomainEnabled,
+    setBrandDomain,
+    save,
     reset,
   } = useContentPreferences();
 
   const [langQuery, setLangQuery] = useState("");
   const langList = useMemo(
     () =>
-      LANGS.filter((l) => l.toLowerCase().includes(langQuery.toLowerCase())),
+      LANGS.filter((l) =>
+        l.toLowerCase().includes(langQuery.toLowerCase())
+      ),
     [langQuery]
   );
-  const dirty = JSON.stringify(prefs) !== JSON.stringify(savedPrefs);
+  const dirty =
+    JSON.stringify(prefs) !== JSON.stringify(savedPrefs);
 
   const handleSave = () => {
     save();
@@ -1288,11 +1864,12 @@ export function PreferencesPanel() {
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
               <CardTitle className="text-2xl font-bold tracking-tight flex items-center gap-2 text-blue-700">
-                <Sparkles className="h-5 w-5 text-green-500" /> Content
-                Preferences
+                <Sparkles className="h-5 w-5 text-green-500" />{" "}
+                Content Preferences
               </CardTitle>
               <p className="mt-1 text-sm text-gray-500">
-                Fine-tune how your articles should feel, read, and look.
+                Fine-tune how your articles should feel, read, and
+                look.
               </p>
             </div>
             <Badge
@@ -1302,7 +1879,8 @@ export function PreferencesPanel() {
                 dirty
                   ? "bg-green-500 text-white"
                   : "border border-gray-300 text-gray-600 bg-white"
-              )}>
+              )}
+            >
               {dirty ? "Unsaved Changes" : "Up to Date"}
             </Badge>
           </div>
@@ -1318,7 +1896,9 @@ export function PreferencesPanel() {
               </Label>
               <Segmented
                 value={prefs.keywordMode}
-                onChange={(m) => setKeywordMode(m as KeywordMode)}
+                onChange={(m) =>
+                  setKeywordMode(m as KeywordMode)
+                }
                 items={KW_OPTS}
                 render={(m) => (
                   <span>
@@ -1327,7 +1907,8 @@ export function PreferencesPanel() {
                 )}
               />
               <p className="text-xs text-gray-500 mt-2">
-                Defines how many keyword sets per generated article.
+                Defines how many keywords are grouped into each
+                article.
               </p>
             </section>
 
@@ -1338,7 +1919,9 @@ export function PreferencesPanel() {
               </Label>
               <Segmented
                 value={prefs.mood}
-                onChange={(m) => setMood(m as ContentMood)}
+                onChange={(m) =>
+                  setMood(m as ContentMood)
+                }
                 items={MOODS}
               />
             </section>
@@ -1346,46 +1929,55 @@ export function PreferencesPanel() {
             {/* Paragraph Words */}
             <section>
               <Label className="text-sm font-semibold text-gray-800 mb-2 block">
-                Paragraph Length
+                Paragraph / Section Depth
               </Label>
               <Segmented
                 value={prefs.paragraphWords}
-                onChange={(w) => setParagraphWords(w as ParagraphWordTarget)}
+                onChange={(w) =>
+                  setParagraphWords(
+                    w as ParagraphWordTarget
+                  )
+                }
                 items={PARA_OPTS}
                 render={(w) => <span>{w} words</span>}
               />
+              <p className="text-xs text-gray-500 mt-2">
+                Controls how detailed each block of content should
+                be.
+              </p>
             </section>
 
-            {/* Structure */}
+            {/* Conclusion Toggle */}
             <section>
               <Label className="text-sm font-semibold text-gray-800 mb-2 block">
-                Structure & Sections
+                Conclusion
               </Label>
-              <Segmented
-                value={prefs.sectionCount}
-                onChange={(n) => setSectionCount(n as SectionCount)}
-                items={SEC_OPTS}
-                render={(n) => <span>{n} sections</span>}
-              />
-              <div className="mt-3 flex items-center gap-3 border border-gray-200 rounded-2xl p-3 bg-gray-50 hover:border-blue-300 transition">
+              <div className="flex items-center gap-3 border border-gray-200 rounded-2xl p-3 bg-gray-50 hover:border-blue-300 transition">
                 <Switch
                   checked={prefs.includeConclusion}
-                  onCheckedChange={(v: boolean) => setIncludeConclusion(!!v)}
+                  onCheckedChange={(v: boolean) =>
+                    setIncludeConclusion(!!v)
+                  }
                   id="include-conclusion"
                 />
                 <Label
                   htmlFor="include-conclusion"
-                  className="text-sm font-medium text-gray-700">
-                  Include Conclusion
+                  className="text-sm font-medium text-gray-700"
+                >
+                  Include a strong closing section
                 </Label>
               </div>
+              <p className="text-xs text-gray-500 mt-2">
+                If enabled, the model will generate a single, long
+                conclusion paragraph.
+              </p>
             </section>
 
             {/* Custom Count */}
             <section>
               <Label className="text-sm font-semibold text-gray-800 flex items-center gap-2 mb-2">
-                <Wand2 className="h-4 w-4 text-green-500" /> Custom Article
-                Count
+                <Wand2 className="h-4 w-4 text-green-500" />{" "}
+                Custom Article Count
               </Label>
               <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 shadow-inner">
                 <div className="flex items-center justify-between mb-3">
@@ -1397,11 +1989,13 @@ export function PreferencesPanel() {
                       }
                     />
                     <span className="text-sm text-gray-700">
-                      Enable random reuse
+                      Enable random keyword reuse
                     </span>
                   </div>
                   {prefs.customModeEnabled && (
-                    <Badge className="bg-green-500 text-white">Active</Badge>
+                    <Badge className="bg-green-500 text-white">
+                      Active
+                    </Badge>
                   )}
                 </div>
                 <Slider
@@ -1409,7 +2003,9 @@ export function PreferencesPanel() {
                   min={1}
                   max={200}
                   step={1}
-                  onValueChange={([v]: [number]) => setArticleCount(v)}
+                  onValueChange={([v]: [number]) =>
+                    setArticleCount(v)
+                  }
                   className="mb-3"
                 />
                 <Input
@@ -1417,7 +2013,11 @@ export function PreferencesPanel() {
                   min={1}
                   max={200}
                   value={prefs.articleCount}
-                  onChange={(e) => setArticleCount(Number(e.target.value))}
+                  onChange={(e) =>
+                    setArticleCount(
+                      Number(e.target.value)
+                    )
+                  }
                   className="w-24 text-center border-gray-300"
                 />
               </div>
@@ -1426,18 +2026,22 @@ export function PreferencesPanel() {
             {/* Language */}
             <section>
               <Label className="text-sm font-semibold text-gray-800 flex items-center gap-2 mb-2">
-                <Globe2 className="h-4 w-4 text-blue-500" /> Language
+                <Globe2 className="h-4 w-4 text-blue-500" />{" "}
+                Language
               </Label>
               <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3 shadow-sm">
                 <Input
                   value={langQuery}
-                  onChange={(e) => setLangQuery(e.target.value)}
+                  onChange={(e) =>
+                    setLangQuery(e.target.value)
+                  }
                   placeholder="Search language..."
                   className="mb-2 border-gray-300"
                 />
                 <div className="max-h-44 overflow-auto rounded-lg border border-gray-200">
                   {langList.map((l) => {
-                    const active = prefs.language === l;
+                    const active =
+                      prefs.language === l;
                     return (
                       <button
                         key={l}
@@ -1450,16 +2054,202 @@ export function PreferencesPanel() {
                           active
                             ? "bg-gradient-to-r from-green-400/20 to-blue-400/20 text-gray-900 font-medium"
                             : "hover:bg-orange-50"
-                        )}>
+                        )}
+                      >
                         <span>{l}</span>
-                        {active && <Check className="h-4 w-4 text-green-600" />}
+                        {active && (
+                          <Check className="h-4 w-4 text-green-600" />
+                        )}
                       </button>
                     );
                   })}
                 </div>
                 <p className="mt-2 text-xs text-gray-600">
-                  Selected: <strong>{prefs.language}</strong>
+                  Selected:{" "}
+                  <strong>{prefs.language}</strong>
                 </p>
+              </div>
+            </section>
+
+            {/* Total Content Words */}
+            <section>
+              <Label className="text-sm font-semibold text-gray-800 mb-2 block">
+                Total Content Words
+              </Label>
+              <Segmented
+                value={prefs.totalContentWords}
+                onChange={(w) =>
+                  setTotalContentWords(
+                    w as TotalContentWords
+                  )
+                }
+                items={TOTAL_WORDS_OPTS}
+                render={(w) => <span>{w} words</span>}
+              />
+              <p className="text-xs text-gray-500 mt-2">
+                The model is instructed to match this word
+                count as closely as possible.
+              </p>
+            </section>
+
+            {/* Title Length */}
+            <section>
+              <Label className="text-sm font-semibold text-gray-800 mb-2 block">
+                Title Length
+              </Label>
+              <Segmented
+                value={prefs.titleLength}
+                onChange={(l) =>
+                  setTitleLength(l as TitleLength)
+                }
+                items={TITLE_LENGTH_OPTS}
+                render={(l) => (
+                  <span>{l} characters</span>
+                )}
+              />
+              <p className="text-xs text-gray-500 mt-2">
+                Maximum allowed characters for the title.
+              </p>
+            </section>
+
+            {/* Content Format Options */}
+            <section className="xl:col-span-2">
+              <Label className="text-sm font-semibold text-gray-800 mb-3 block">
+                Content Format Options
+              </Label>
+              <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 shadow-sm">
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  <div className="flex items-center gap-3 border border-gray-200 rounded-xl p-3 bg-white hover:border-blue-300 transition">
+                    <Switch
+                      checked={prefs.includeBulletPoints}
+                      onCheckedChange={(v: boolean) =>
+                        setIncludeBulletPoints(
+                          !!v
+                        )
+                      }
+                      id="include-bullets"
+                    />
+                    <Label
+                      htmlFor="include-bullets"
+                      className="text-sm font-medium text-gray-700 cursor-pointer"
+                    >
+                      Bullet Points
+                    </Label>
+                  </div>
+
+                  <div className="flex items-center gap-3 border border-gray-200 rounded-xl p-3 bg-white hover:border-blue-300 transition">
+                    <Switch
+                      checked={prefs.includeTables}
+                      onCheckedChange={(v: boolean) =>
+                        setIncludeTables(!!v)
+                      }
+                      id="include-tables"
+                    />
+                    <Label
+                      htmlFor="include-tables"
+                      className="text-sm font-medium text-gray-700 cursor-pointer"
+                    >
+                      Tables
+                    </Label>
+                  </div>
+
+                  <div className="flex items-center gap-3 border border-gray-200 rounded-xl p-3 bg-white hover:border-blue-300 transition">
+                    <Switch
+                      checked={prefs.includeEmojis}
+                      onCheckedChange={(v: boolean) =>
+                        setIncludeEmojis(!!v)
+                      }
+                      id="include-emojis"
+                    />
+                    <Label
+                      htmlFor="include-emojis"
+                      className="text-sm font-medium text-gray-700 cursor-pointer"
+                    >
+                      Emojis
+                    </Label>
+                  </div>
+
+                  <div className="flex items-center gap-3 border border-gray-200 rounded-xl p-3 bg-white hover:border-blue-300 transition">
+                    <Switch
+                      checked={
+                        prefs.includeBoxesQuotesHighlights
+                      }
+                      onCheckedChange={(v: boolean) =>
+                        setIncludeBoxesQuotesHighlights(
+                          !!v
+                        )
+                      }
+                      id="include-boxes"
+                    />
+                    <Label
+                      htmlFor="include-boxes"
+                      className="text-sm font-medium text-gray-700 cursor-pointer"
+                    >
+                      Boxes, Quotes & Highlights
+                    </Label>
+                  </div>
+
+                  <div className="flex items-center gap-3 border border-gray-200 rounded-xl p-3 bg-white hover:border-blue-300 transition">
+                    <Switch
+                      checked={prefs.includeQandA}
+                      onCheckedChange={(v: boolean) =>
+                        setIncludeQandA(!!v)
+                      }
+                      id="include-qa"
+                    />
+                    <Label
+                      htmlFor="include-qa"
+                      className="text-sm font-medium text-gray-700 cursor-pointer"
+                    >
+                      Question & Answers
+                    </Label>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* Brand / Domain */}
+            <section className="xl:col-span-2">
+              <Label className="text-sm font-semibold text-gray-800 mb-2 block">
+                Brand / Domain Mention (Conclusion Only)
+              </Label>
+              <div className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-gray-50 p-4 shadow-sm">
+                <div className="flex items-center gap-3">
+                  <Switch
+                    checked={prefs.brandDomainEnabled}
+                    onCheckedChange={(v: boolean) =>
+                      setBrandDomainEnabled(!!v)
+                    }
+                    id="brand-toggle"
+                  />
+                  <Label
+                    htmlFor="brand-toggle"
+                    className="text-sm font-medium text-gray-700 cursor-pointer"
+                  >
+                    Mention brand/domain in conclusion
+                    (once, naturally)
+                  </Label>
+                </div>
+                {prefs.brandDomainEnabled && (
+                  <div className="flex flex-col gap-1">
+                    <Input
+                      placeholder="e.g. example.com"
+                      value={prefs.brandDomain}
+                      onChange={(e) =>
+                        setBrandDomain(
+                          e.target.value
+                        )
+                      }
+                      className="border-gray-300"
+                    />
+                    <p className="text-xs text-gray-500">
+                      If provided, the model is instructed to
+                      mention this domain exactly once, only in
+                      the conclusion paragraph. If left empty,
+                      no brand/domain will be inserted.
+                    </p>
+                  </div>
+                )}
               </div>
             </section>
 
@@ -1470,7 +2260,9 @@ export function PreferencesPanel() {
               </Label>
               <Textarea
                 value={prefs.extraInstructions}
-                onChange={(e) => setExtraInstructions(e.target.value)}
+                onChange={(e) =>
+                  setExtraInstructions(e.target.value)
+                }
                 placeholder="Describe tone, structure, audience, or must-include ideas..."
                 className="min-h-[140px] border-gray-300 rounded-2xl bg-white shadow-sm hover:shadow-md transition-all"
               />
@@ -1478,7 +2270,8 @@ export function PreferencesPanel() {
                 <Button
                   className="rounded-2xl bg-gradient-to-r from-blue-500 to-green-400 text-white hover:from-blue-600 hover:to-orange-400 transition-all"
                   onClick={handleSave}
-                  disabled={!dirty}>
+                  disabled={!dirty}
+                >
                   {dirty ? "Save" : "Saved"}
                 </Button>
                 <Button
@@ -1487,7 +2280,8 @@ export function PreferencesPanel() {
                     reset();
                     toast.info("Preferences reset");
                   }}
-                  className="rounded-2xl border-gray-300 text-gray-700 hover:bg-orange-50">
+                  className="rounded-2xl border-gray-300 text-gray-700 hover:bg-orange-50"
+                >
                   Reset
                 </Button>
               </div>
@@ -1497,8 +2291,9 @@ export function PreferencesPanel() {
           {/* Footer */}
           <div className="mt-8 rounded-2xl border border-gray-200 bg-gray-50 p-4 text-sm flex flex-wrap items-center justify-between shadow-sm">
             <span className="text-gray-600">
-              💡 Combine <b>mood</b> and <b>length</b> to produce natural,
-              human-like rhythm.
+              💡 Set <b>total words</b>, <b>paragraph depth</b>, and{" "}
+              <b>mood</b> — the generator uses these as hard
+              constraints for cleaner, human-like output.
             </span>
           </div>
         </CardContent>

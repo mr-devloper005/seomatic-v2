@@ -311,7 +311,331 @@
 //       </div>
 //     </div>
 //   );
+// // }
+
+// import React, { useEffect, useRef, useState } from "react";
+// import { Editor } from "@tinymce/tinymce-react";
+
+// const SESSION_KEY = "open-content-item_v1";
+// const FALLBACK_KEY = `${SESSION_KEY}_fallback`;
+
+// /* Helpers (same as your version, with tiny edits) */
+// function getStoredOpenItem(): any | null {
+//   try {
+//     const raw =
+//       sessionStorage.getItem(SESSION_KEY) ?? localStorage.getItem(FALLBACK_KEY);
+//     if (!raw) return null;
+//     return JSON.parse(raw);
+//   } catch (e) {
+//     console.warn("getStoredOpenItem parse error", e);
+//     return null;
+//   }
 // }
+// function escapeHtml(s: string) {
+//   return String(s)
+//     .replace(/&/g, "&amp;")
+//     .replace(/</g, "&lt;")
+//     .replace(/>/g, "&gt;")
+//     .replace(/"/g, "&quot;");
+// }
+// function applyAnchorTokenOnce(
+//   html: string,
+//   keyword: string,
+//   url?: string | null
+// ) {
+//   if (!html || !keyword) return html || "";
+//   const token = `[ANCHOR:${keyword}]`;
+//   if (html.indexOf(token) === -1) return html;
+//   const safeUrl = url ? escapeHtml(url) : "";
+//   const safeKw = escapeHtml(keyword);
+//   const anchor = url
+//     ? `<a href="${safeUrl}" target="_blank" rel="nofollow noopener"><strong>${safeKw}</strong></a>`
+//     : `<strong>${safeKw}</strong>`;
+//   return html.replace(token, anchor);
+// }
+
+// /** demoteH1ToH2: subheadings ko h2 enforce */
+// function demoteH1ToH2(s: string) {
+//   return s.replace(/<h1(\s|>)/gi, "<h2$1").replace(/<\/h1>/gi, "</h2>");
+// }
+
+// function normalizeIncomingContent(raw: string) {
+//   if (!raw) return "";
+//   let s = String(raw);
+
+//   // Ensure CRLF handling + basic cleanup
+//   s = s.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+
+//   const hasHtml = /<\/?[a-z][\s\S]*>/i.test(s);
+//   if (!hasHtml) {
+//     s = s
+//       .split("\n")
+//       .map((line) => {
+//         const t = line.trim();
+//         if (t.startsWith("### "))
+//           return `<h3>${escapeHtml(t.slice(4).trim())}</h3>`;
+//         if (t.startsWith("## "))
+//           return `<h2>${escapeHtml(t.slice(3).trim())}</h2>`;
+//         if (t.startsWith("# "))
+//           return `<h2>${escapeHtml(t.slice(2).trim())}</h2>`; // ⬅️ markdown H1 also demoted to H2
+//         if (t === "") return "</p><p>";
+//         return `<p>${escapeHtml(line)}</p>`;
+//       })
+//       .join("\n")
+//       .replace(/(<\/p><p>)+/g, "</p><p>")
+//       .replace(/^<\/p><p>/, "<p>")
+//       .replace(/<\/p><p>$/, "</p>");
+//     if (!/^<p>|^<h[1-6]/i.test(s)) s = `<p>${escapeHtml(s)}</p>`;
+//     return demoteH1ToH2(s);
+//   }
+
+//   // HTML input path
+//   s = s.replace(/<p>\s*<\/p>/g, "");
+
+//   // ❌ OLD BUG (removed): This was deleting the Conclusion heading entirely.
+//   // s = s.replace(/<h[2-6][^>]*>\s*Conclusion\s*<\/h[2-6]>/gi, "");
+
+//   // ✅ Enforce subheadings as H2
+//   s = demoteH1ToH2(s);
+
+//   return s;
+// }
+
+// export default function ContentEditorPage(): React.ReactElement {
+//   const [loading, setLoading] = useState(true);
+//   const [item, setItem] = useState<any | null>(null);
+//   const [title, setTitle] = useState("");
+//   const [editorHtml, setEditorHtml] = useState("");
+//   const editorRef = useRef<any>(null);
+
+//   useEffect(() => {
+//     const found = getStoredOpenItem();
+//     setItem(found);
+//     if (found) {
+//       const kw: string = found.keyword ?? "";
+//       const url: string | undefined =
+//         found.targetUrl ?? found.keywordLink ?? undefined;
+
+//       setTitle(found.title ?? kw ?? "");
+
+//       const raw = found.generatedContent ?? "";
+//       const withAnchor = applyAnchorTokenOnce(raw, kw, url);
+//       const normalized = normalizeIncomingContent(withAnchor);
+//       setEditorHtml(normalized || "<p></p>");
+//     }
+//     setLoading(false);
+//   }, []);
+
+//   const handleSave = () => {
+//     if (!item) return;
+//     const html = editorRef.current
+//       ? editorRef.current.getContent()
+//       : editorHtml;
+//     const updated = {
+//       ...item,
+//       title: (title || "").trim() || item.title || item.keyword,
+//       generatedContent: html,
+//     };
+//     try {
+//       const raw = localStorage.getItem("content-items");
+//       const arr = raw ? (JSON.parse(raw) as any[]) : [];
+//       const idx = arr.findIndex((x) => x.id === item.id);
+//       if (idx >= 0) arr[idx] = updated;
+//       else arr.push(updated);
+//       localStorage.setItem("content-items", JSON.stringify(arr));
+//       sessionStorage.setItem(SESSION_KEY, JSON.stringify(updated));
+//       localStorage.setItem(FALLBACK_KEY, JSON.stringify(updated));
+//       alert("Saved locally. Content list updated.");
+//       try {
+//         window.dispatchEvent(new Event("storage"));
+//       } catch {}
+//     } catch (e) {
+//       console.error("save error", e);
+//       alert("Save failed");
+//     }
+//   };
+
+//   if (loading) return <div>Loading editor…</div>;
+//   if (!item) return <div>No content item found to edit.</div>;
+
+//   const titleLen = (title || "").trim().length;
+//   const titleOk = titleLen >= 80 && titleLen <= 120;
+
+//   return (
+//     <div
+//       style={{
+//         height: "88vh",
+//         maxWidth: 1100,
+//         margin: "0 auto",
+//         padding: 12,
+//         display: "flex",
+//         flexDirection: "column",
+//       }}>
+//       <style>{`
+//         .editor-card {
+//           border: 1px solid #e6e6e6;
+//           border-radius: 12px;
+//           overflow: hidden;
+//           background: #fff;
+//           flex: 1; min-height: 0; display: flex; flex-direction: column;
+//         }
+//         .editor-wrapper, .tox-tinymce, .tox-edit-area, .tox-edit-area__iframe { height: 100% !important; }
+//       `}</style>
+
+//       <div style={{ marginBottom: 8 }}>
+//         <input
+//           type="text"
+//           value={title}
+//           onChange={(e) => setTitle(e.target.value)}
+//           placeholder="Title (H1, 80–120 characters)"
+//           style={{
+//             width: "100%",
+//             padding: "12px 14px",
+//             fontSize: 28,
+//             borderRadius: 12,
+//             border: "1px solid #ddd",
+//             boxSizing: "border-box",
+//             marginBottom: 4,
+//             fontWeight: 800,
+//             textAlign: "center",
+//           }}
+//         />
+//         <div
+//           style={{
+//             textAlign: "right",
+//             fontSize: 12,
+//             color: titleOk ? "#16a34a" : "#ef4444",
+//           }}>
+//           {titleLen} / 80–120
+//         </div>
+//       </div>
+
+//       <div className="editor-card">
+//         <div className="editor-wrapper" style={{ flex: 1, minHeight: 0 }}>
+//           <Editor
+//             tinymceScriptSrc="/tinymce/tinymce.min.js"
+//             licenseKey="gpl"
+//             onInit={(_evt, editor) => (editorRef.current = editor)}
+//             value={editorHtml}
+//             onEditorChange={(content) => setEditorHtml(content)}
+//             init={{
+//               base_url: "/tinymce",
+//               suffix: ".min",
+//               height: "100%",
+//               menubar: false,
+//               plugins: [
+//                 "lists",
+//                 "link",
+//                 "image",
+//                 "table",
+//                 "code",
+//                 "paste",
+//                 "wordcount",
+//               ],
+//               toolbar:
+//                 "undo redo | blocks | bold italic underline strikethrough | " +
+//                 "alignleft aligncenter alignright alignjustify | bullist numlist outdent indent | " +
+//                 "link image | removeformat | code",
+
+//               /** 👇 H1 ko UI se hatao; H2/H3 ko allow karo */
+//               block_formats:
+//                 "Paragraph=p; Heading 2=h2; Heading 3=h3; Heading 4=h4",
+
+//               /** Paste pe jo bhi H1 aaye, H2 me convert */
+//               paste_data_images: true,
+//               paste_preprocess: (_plugin, args) => {
+//                 args.content = demoteH1ToH2(args.content || "");
+//               },
+
+//               automatic_uploads: false,
+//               file_picker_types: "image",
+//               image_caption: true,
+//               image_dimensions: true,
+//               object_resizing: "img",
+
+//               file_picker_callback: (cb) => {
+//                 const input = document.createElement("input");
+//                 input.type = "file";
+//                 input.accept = "image/*";
+//                 input.onchange = () => {
+//                   const file = input.files?.[0];
+//                   if (!file) return;
+//                   const reader = new FileReader();
+//                   reader.onload = () =>
+//                     cb(String(reader.result), { title: file.name });
+//                   reader.readAsDataURL(file);
+//                 };
+//                 input.click();
+//               },
+//               images_upload_handler: async (blobInfo) => blobInfo.base64(),
+
+//               content_style: `
+//                 body { font-family: -apple-system, Segoe UI, Roboto, Inter, sans-serif; font-size: 15px; line-height: 1.7; padding: 16px; }
+//                 p { margin: 0 0 16px; text-align: justify; }
+//                 h1,h2,h3 { margin: 0 0 14px; font-weight: 700; }
+//                 img { display: block; margin: 8px 0; max-width: 100%; height: auto; }
+//                 a { text-decoration: underline; }
+//               `,
+//               statusbar: true,
+//               branding: false,
+//             }}
+//           />
+//         </div>
+//       </div>
+
+//       <div
+//         style={{
+//           display: "flex",
+//           justifyContent: "space-between",
+//           marginTop: 12,
+//         }}>
+//         <div style={{ color: "#666", fontSize: 13 }}>
+//           <div>
+//             <strong>Keyword:</strong>{" "}
+//             <span style={{ fontWeight: 600 }}>{item.keyword}</span>
+//           </div>
+//           {item.targetUrl && (
+//             <div>
+//               <strong>Keyword link:</strong>{" "}
+//               <a href={item.targetUrl} target="_blank" rel="noreferrer">
+//                 {item.targetUrl}
+//               </a>
+//             </div>
+//           )}
+//         </div>
+//         <div style={{ display: "flex", gap: 8 }}>
+//           <button
+//             onClick={handleSave}
+//             style={{
+//               padding: "10px 14px",
+//               background: "#22c55e",
+//               color: "#fff",
+//               border: "none",
+//               borderRadius: 8,
+//               fontWeight: 600,
+//             }}>
+//             Save
+//           </button>
+//           <button
+//             onClick={() => {
+//               const html =
+//                 `<h1>${escapeHtml(title)}</h1>\n` +
+//                 (editorRef.current?.getContent() ?? editorHtml);
+//               navigator.clipboard
+//                 .writeText(html)
+//                 .then(() => alert("HTML copied to clipboard"))
+//                 .catch(() => alert("Copy failed"));
+//             }}
+//             style={{ padding: "10px 14px", borderRadius: 8 }}>
+//             Copy HTML
+//           </button>
+//         </div>
+//       </div>
+//     </div>
+//   );
+// }
+
+
 
 import React, { useEffect, useRef, useState } from "react";
 import { Editor } from "@tinymce/tinymce-react";
@@ -319,11 +643,12 @@ import { Editor } from "@tinymce/tinymce-react";
 const SESSION_KEY = "open-content-item_v1";
 const FALLBACK_KEY = `${SESSION_KEY}_fallback`;
 
-/* Helpers (same as your version, with tiny edits) */
+/* Helpers */
 function getStoredOpenItem(): any | null {
   try {
     const raw =
-      sessionStorage.getItem(SESSION_KEY) ?? localStorage.getItem(FALLBACK_KEY);
+      sessionStorage.getItem(SESSION_KEY) ??
+      localStorage.getItem(FALLBACK_KEY);
     if (!raw) return null;
     return JSON.parse(raw);
   } catch (e) {
@@ -331,6 +656,7 @@ function getStoredOpenItem(): any | null {
     return null;
   }
 }
+
 function escapeHtml(s: string) {
   return String(s)
     .replace(/&/g, "&amp;")
@@ -338,6 +664,8 @@ function escapeHtml(s: string) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 }
+
+/** Single keyword token → anchor */
 function applyAnchorTokenOnce(
   html: string,
   keyword: string,
@@ -345,7 +673,7 @@ function applyAnchorTokenOnce(
 ) {
   if (!html || !keyword) return html || "";
   const token = `[ANCHOR:${keyword}]`;
-  if (html.indexOf(token) === -1) return html;
+  if (!html.includes(token)) return html;
   const safeUrl = url ? escapeHtml(url) : "";
   const safeKw = escapeHtml(keyword);
   const anchor = url
@@ -354,16 +682,38 @@ function applyAnchorTokenOnce(
   return html.replace(token, anchor);
 }
 
-/** demoteH1ToH2: subheadings ko h2 enforce */
+/** Multiple tokens from urlMap → anchors */
+function applyAllAnchorTokens(
+  html: string,
+  urlMap?: Record<string, string | null>
+) {
+  if (!html || !urlMap) return html || "";
+  let out = html;
+  for (const [keyword, url] of Object.entries(urlMap)) {
+    if (!keyword) continue;
+    const token = `[ANCHOR:${keyword}]`;
+    if (!out.includes(token)) continue;
+    const safeUrl = url ? escapeHtml(url) : "";
+    const safeKw = escapeHtml(keyword);
+    const anchor = url
+      ? `<a href="${safeUrl}" target="_blank" rel="nofollow noopener"><strong>${safeKw}</strong></a>`
+      : `<strong>${safeKw}</strong>`;
+    out = out.replace(token, anchor);
+  }
+  return out;
+}
+
+/** H1 → H2 */
 function demoteH1ToH2(s: string) {
-  return s.replace(/<h1(\s|>)/gi, "<h2$1").replace(/<\/h1>/gi, "</h2>");
+  return s
+    .replace(/<h1(\s|>)/gi, "<h2$1")
+    .replace(/<\/h1>/gi, "</h2>");
 }
 
 function normalizeIncomingContent(raw: string) {
   if (!raw) return "";
   let s = String(raw);
 
-  // Ensure CRLF handling + basic cleanup
   s = s.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 
   const hasHtml = /<\/?[a-z][\s\S]*>/i.test(s);
@@ -373,11 +723,17 @@ function normalizeIncomingContent(raw: string) {
       .map((line) => {
         const t = line.trim();
         if (t.startsWith("### "))
-          return `<h3>${escapeHtml(t.slice(4).trim())}</h3>`;
+          return `<h3>${escapeHtml(
+            t.slice(4).trim()
+          )}</h3>`;
         if (t.startsWith("## "))
-          return `<h2>${escapeHtml(t.slice(3).trim())}</h2>`;
+          return `<h2>${escapeHtml(
+            t.slice(3).trim()
+          )}</h2>`;
         if (t.startsWith("# "))
-          return `<h2>${escapeHtml(t.slice(2).trim())}</h2>`; // ⬅️ markdown H1 also demoted to H2
+          return `<h2>${escapeHtml(
+            t.slice(2).trim()
+          )}</h2>`;
         if (t === "") return "</p><p>";
         return `<p>${escapeHtml(line)}</p>`;
       })
@@ -385,17 +741,13 @@ function normalizeIncomingContent(raw: string) {
       .replace(/(<\/p><p>)+/g, "</p><p>")
       .replace(/^<\/p><p>/, "<p>")
       .replace(/<\/p><p>$/, "</p>");
-    if (!/^<p>|^<h[1-6]/i.test(s)) s = `<p>${escapeHtml(s)}</p>`;
+
+    if (!/^<p>|^<h[1-6]/i.test(s))
+      s = `<p>${escapeHtml(s)}</p>`;
     return demoteH1ToH2(s);
   }
 
-  // HTML input path
   s = s.replace(/<p>\s*<\/p>/g, "");
-
-  // ❌ OLD BUG (removed): This was deleting the Conclusion heading entirely.
-  // s = s.replace(/<h[2-6][^>]*>\s*Conclusion\s*<\/h[2-6]>/gi, "");
-
-  // ✅ Enforce subheadings as H2
   s = demoteH1ToH2(s);
 
   return s;
@@ -411,18 +763,44 @@ export default function ContentEditorPage(): React.ReactElement {
   useEffect(() => {
     const found = getStoredOpenItem();
     setItem(found);
+
     if (found) {
-      const kw: string = found.keyword ?? "";
-      const url: string | undefined =
-        found.targetUrl ?? found.keywordLink ?? undefined;
+      const primaryKeyword: string = found.keyword ?? "";
+      const primaryUrl: string | undefined =
+        found.targetUrl ??
+        found.keywordLink ??
+        undefined;
 
-      setTitle(found.title ?? kw ?? "");
+      // Base HTML from generator
+      let raw: string = found.generatedContent ?? "";
 
-      const raw = found.generatedContent ?? "";
-      const withAnchor = applyAnchorTokenOnce(raw, kw, url);
-      const normalized = normalizeIncomingContent(withAnchor);
-      setEditorHtml(normalized || "<p></p>");
+      // 1) Multi-keyword anchor tokens (if any left)
+      if (found.urlMap) {
+        raw = applyAllAnchorTokens(raw, found.urlMap);
+      }
+
+      // 2) Backward compatibility: single keyword token
+      if (primaryKeyword) {
+        raw = applyAnchorTokenOnce(
+          raw,
+          primaryKeyword,
+          primaryUrl
+        );
+      }
+
+      const normalized =
+        normalizeIncomingContent(raw);
+      setEditorHtml(
+        normalized || "<p></p>"
+      );
+
+      setTitle(
+        found.title ??
+          primaryKeyword ??
+          ""
+      );
     }
+
     setLoading(false);
   }, []);
 
@@ -431,23 +809,50 @@ export default function ContentEditorPage(): React.ReactElement {
     const html = editorRef.current
       ? editorRef.current.getContent()
       : editorHtml;
+
     const updated = {
       ...item,
-      title: (title || "").trim() || item.title || item.keyword,
+      title:
+        (title || "").trim() ||
+        item.title ||
+        item.keyword,
       generatedContent: html,
     };
+
     try {
-      const raw = localStorage.getItem("content-items");
-      const arr = raw ? (JSON.parse(raw) as any[]) : [];
-      const idx = arr.findIndex((x) => x.id === item.id);
-      if (idx >= 0) arr[idx] = updated;
+      const raw =
+        localStorage.getItem(
+          "content-items"
+        );
+      const arr = raw
+        ? (JSON.parse(raw) as any[])
+        : [];
+      const idx = arr.findIndex(
+        (x) => x.id === item.id
+      );
+      if (idx >= 0)
+        arr[idx] = updated;
       else arr.push(updated);
-      localStorage.setItem("content-items", JSON.stringify(arr));
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify(updated));
-      localStorage.setItem(FALLBACK_KEY, JSON.stringify(updated));
-      alert("Saved locally. Content list updated.");
+
+      localStorage.setItem(
+        "content-items",
+        JSON.stringify(arr)
+      );
+      sessionStorage.setItem(
+        SESSION_KEY,
+        JSON.stringify(updated)
+      );
+      localStorage.setItem(
+        FALLBACK_KEY,
+        JSON.stringify(updated)
+      );
+      alert(
+        "Saved locally. Content list updated."
+      );
       try {
-        window.dispatchEvent(new Event("storage"));
+        window.dispatchEvent(
+          new Event("storage")
+        );
       } catch {}
     } catch (e) {
       console.error("save error", e);
@@ -455,11 +860,50 @@ export default function ContentEditorPage(): React.ReactElement {
     }
   };
 
-  if (loading) return <div>Loading editor…</div>;
-  if (!item) return <div>No content item found to edit.</div>;
+  if (loading)
+    return <div>Loading editor…</div>;
+  if (!item)
+    return (
+      <div>No content item found to edit.</div>
+    );
 
-  const titleLen = (title || "").trim().length;
-  const titleOk = titleLen >= 80 && titleLen <= 120;
+  // --- Keywords + URLs for footer display ---
+
+  const keywordsUsed: string[] =
+    Array.isArray(item.keywordsUsed) &&
+    item.keywordsUsed.length
+      ? item.keywordsUsed
+      : item.keyword
+      ? [item.keyword]
+      : [];
+
+  const urlMap: Record<
+    string,
+    string | null
+  > =
+    (item.urlMap as Record<
+      string,
+      string | null
+    >) ||
+    (item.targetUrl &&
+    item.keyword
+      ? {
+          [item.keyword]:
+            item.targetUrl,
+        }
+      : {});
+
+  // Title length guidance based on prefs snapshot (no dummy)
+  const maxTitleChars: number =
+    Number(
+      item?.prefsSnapshot
+        ?.titleLength
+    ) || 100;
+  const titleLen = (title || "")
+    .trim().length;
+  const titleOk =
+    titleLen > 0 &&
+    titleLen <= maxTitleChars;
 
   return (
     <div
@@ -470,24 +914,36 @@ export default function ContentEditorPage(): React.ReactElement {
         padding: 12,
         display: "flex",
         flexDirection: "column",
-      }}>
+      }}
+    >
       <style>{`
         .editor-card {
           border: 1px solid #e6e6e6;
           border-radius: 12px;
           overflow: hidden;
           background: #fff;
-          flex: 1; min-height: 0; display: flex; flex-direction: column;
+          flex: 1;
+          min-height: 0;
+          display: flex;
+          flex-direction: column;
         }
-        .editor-wrapper, .tox-tinymce, .tox-edit-area, .tox-edit-area__iframe { height: 100% !important; }
+        .editor-wrapper,
+        .tox-tinymce,
+        .tox-edit-area,
+        .tox-edit-area__iframe {
+          height: 100% !important;
+        }
       `}</style>
 
+      {/* Title */}
       <div style={{ marginBottom: 8 }}>
         <input
           type="text"
           value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Title (H1, 80–120 characters)"
+          onChange={(e) =>
+            setTitle(e.target.value)
+          }
+          placeholder={`Title (max ${maxTitleChars} characters)`}
           style={{
             width: "100%",
             padding: "12px 14px",
@@ -504,20 +960,34 @@ export default function ContentEditorPage(): React.ReactElement {
           style={{
             textAlign: "right",
             fontSize: 12,
-            color: titleOk ? "#16a34a" : "#ef4444",
-          }}>
-          {titleLen} / 80–120
+            color: titleOk
+              ? "#16a34a"
+              : "#ef4444",
+          }}
+        >
+          {titleLen} / {maxTitleChars}
         </div>
       </div>
 
+      {/* Editor */}
       <div className="editor-card">
-        <div className="editor-wrapper" style={{ flex: 1, minHeight: 0 }}>
+        <div
+          className="editor-wrapper"
+          style={{
+            flex: 1,
+            minHeight: 0,
+          }}
+        >
           <Editor
             tinymceScriptSrc="/tinymce/tinymce.min.js"
             licenseKey="gpl"
-            onInit={(_evt, editor) => (editorRef.current = editor)}
+            onInit={(_evt, editor) =>
+              (editorRef.current = editor)
+            }
             value={editorHtml}
-            onEditorChange={(content) => setEditorHtml(content)}
+            onEditorChange={(content) =>
+              setEditorHtml(content)
+            }
             init={{
               base_url: "/tinymce",
               suffix: ".min",
@@ -536,39 +1006,65 @@ export default function ContentEditorPage(): React.ReactElement {
                 "undo redo | blocks | bold italic underline strikethrough | " +
                 "alignleft aligncenter alignright alignjustify | bullist numlist outdent indent | " +
                 "link image | removeformat | code",
-
-              /** 👇 H1 ko UI se hatao; H2/H3 ko allow karo */
               block_formats:
                 "Paragraph=p; Heading 2=h2; Heading 3=h3; Heading 4=h4",
-
-              /** Paste pe jo bhi H1 aaye, H2 me convert */
               paste_data_images: true,
-              paste_preprocess: (_plugin, args) => {
-                args.content = demoteH1ToH2(args.content || "");
+              paste_preprocess: (
+                _plugin,
+                args
+              ) => {
+                args.content =
+                  demoteH1ToH2(
+                    args.content ||
+                      ""
+                  );
               },
-
               automatic_uploads: false,
-              file_picker_types: "image",
+              file_picker_types:
+                "image",
               image_caption: true,
               image_dimensions: true,
               object_resizing: "img",
-
-              file_picker_callback: (cb) => {
-                const input = document.createElement("input");
+              file_picker_callback: (
+                cb
+              ) => {
+                const input =
+                  document.createElement(
+                    "input"
+                  );
                 input.type = "file";
-                input.accept = "image/*";
+                input.accept =
+                  "image/*";
                 input.onchange = () => {
-                  const file = input.files?.[0];
-                  if (!file) return;
-                  const reader = new FileReader();
-                  reader.onload = () =>
-                    cb(String(reader.result), { title: file.name });
-                  reader.readAsDataURL(file);
+                  const file =
+                    input
+                      .files?.[0];
+                  if (!file)
+                    return;
+                  const reader =
+                    new FileReader();
+                  reader.onload =
+                    () =>
+                      cb(
+                        String(
+                          reader.result
+                        ),
+                        {
+                          title:
+                            file.name,
+                        }
+                      );
+                  reader.readAsDataURL(
+                    file
+                  );
                 };
                 input.click();
               },
-              images_upload_handler: async (blobInfo) => blobInfo.base64(),
-
+              images_upload_handler:
+                async (
+                  blobInfo
+                ) =>
+                  blobInfo.base64(),
               content_style: `
                 body { font-family: -apple-system, Segoe UI, Roboto, Inter, sans-serif; font-size: 15px; line-height: 1.7; padding: 16px; }
                 p { margin: 0 0 16px; text-align: justify; }
@@ -583,50 +1079,150 @@ export default function ContentEditorPage(): React.ReactElement {
         </div>
       </div>
 
+      {/* Footer: all keywords + target pages */}
       <div
         style={{
           display: "flex",
-          justifyContent: "space-between",
+          justifyContent:
+            "space-between",
           marginTop: 12,
-        }}>
-        <div style={{ color: "#666", fontSize: 13 }}>
-          <div>
-            <strong>Keyword:</strong>{" "}
-            <span style={{ fontWeight: 600 }}>{item.keyword}</span>
+          gap: 16,
+          alignItems: "flex-start",
+        }}
+      >
+        <div
+          style={{
+            color: "#666",
+            fontSize: 13,
+            flex: 1,
+          }}
+        >
+          <div
+            style={{
+              fontWeight: 600,
+              marginBottom: 4,
+            }}
+          >
+            Keywords & Target Pages:
           </div>
-          {item.targetUrl && (
+          {keywordsUsed.length ? (
+            <ul
+              style={{
+                listStyle:
+                  "disc",
+                paddingLeft: 18,
+                margin: 0,
+              }}
+            >
+              {keywordsUsed.map(
+                (kw) => {
+                  const url =
+                    urlMap?.[kw] ??
+                    null;
+                  return (
+                    <li
+                      key={
+                        kw
+                      }
+                      style={{
+                        marginBottom: 2,
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontWeight: 500,
+                        }}
+                      >
+                        {kw}
+                      </span>
+                      {url && (
+                        <>
+                          {" "}
+                          -{" "}
+                          <a
+                            href={
+                              url
+                            }
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            {
+                              url
+                            }
+                          </a>
+                        </>
+                      )}
+                    </li>
+                  );
+                }
+              )}
+            </ul>
+          ) : (
             <div>
-              <strong>Keyword link:</strong>{" "}
-              <a href={item.targetUrl} target="_blank" rel="noreferrer">
-                {item.targetUrl}
-              </a>
+              (No keywords metadata
+              found for this
+              item.)
             </div>
           )}
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+          }}
+        >
           <button
             onClick={handleSave}
             style={{
-              padding: "10px 14px",
-              background: "#22c55e",
+              padding:
+                "10px 14px",
+              background:
+                "#22c55e",
               color: "#fff",
               border: "none",
               borderRadius: 8,
               fontWeight: 600,
-            }}>
+              cursor: "pointer",
+            }}
+          >
             Save
           </button>
           <button
             onClick={() => {
               const html =
-                `<h1>${escapeHtml(title)}</h1>\n` +
-                (editorRef.current?.getContent() ?? editorHtml);
+                `<h1>${escapeHtml(
+                  title
+                )}</h1>\n` +
+                (editorRef
+                  .current?.getContent() ??
+                  editorHtml);
               navigator.clipboard
-                .writeText(html)
-                .then(() => alert("HTML copied to clipboard"))
-                .catch(() => alert("Copy failed"));
+                .writeText(
+                  html
+                )
+                .then(() =>
+                  alert(
+                    "HTML copied to clipboard"
+                  )
+                )
+                .catch(() =>
+                  alert(
+                    "Copy failed"
+                  )
+                );
             }}
-            style={{ padding: "10px 14px", borderRadius: 8 }}>
+            style={{
+              padding:
+                "10px 14px",
+              borderRadius: 8,
+              border:
+                "1px solid #ddd",
+              cursor: "pointer",
+              background:
+                "#fff",
+            }}
+          >
             Copy HTML
           </button>
         </div>

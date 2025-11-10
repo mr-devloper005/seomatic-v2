@@ -8469,8 +8469,12 @@ function readEnv(key: string): string | undefined {
 
   return undefined;
 }
-// Prefer secure server-side variable only
-const OPENAI_API_KEY = readEnv("OPENAI_API_KEY") || "";
+// ⚠️ CLIENT-SIDE (INSECURE) VERSION — use only for testing
+const OPENAI_API_KEY =
+  readEnv("VITE_OPENAI_API_KEY") ||
+  readEnv("NEXT_PUBLIC_OPENAI_API_KEY") ||
+  "";
+
 
 
 const OPENAI_BASE_URL =

@@ -8685,6 +8685,8 @@ export async function generateJSONTitleHtml(
     "You are an expert human SEO content writer with years of experience.",
     "Write content that sounds completely natural and human-written.",
     "Avoid AI-like patterns, templates, and repetitive phrasing.",
+    "Promote user engagement and readability.",
+    "Add uniqueness and value beyond common knowledge.",
     'You MUST return ONLY one valid JSON object: { "title": string, "html": string }.',
     "No markdown, no commentary, no code fences.",
     "The `html` must be semantic, clean, and ready-to-publish.",
@@ -8705,10 +8707,8 @@ export async function generateJSONTitleHtml(
     "- Natural sentence rhythm; avoid 'In conclusion', 'Moreover', etc.",
     "- Use concrete, specific detail. No fluff.",
     "- All instructions below MUST be followed strictly.",
-    "",
-    "═══════════════════════════════════════════════════════════════",
     "DETAILED INSTRUCTIONS (user/site prefs):",
-    "═══════════════════════════════════════════════════════════════",
+
     instructions || "(none)"
   );
 

@@ -5638,7 +5638,655 @@
 
 
 
-// src/lib/llm/prompt-engine.ts
+// // src/lib/llm/prompt-engine.ts
+
+// import type { ContentPreferences } from "@/hooks/use-preferences";
+
+// /* LANGUAGE */
+// function languageDirective(label?: string): string {
+//   const selected = (label || "English (US)").trim();
+//   return [
+//     `- Write EVERYTHING (title, headings, content, FAQ) ONLY in: "${selected}". Zero language mixing.`,
+//     "- Use ONE focus keyword per paragraph (can repeat naturally within same paragraph).",
+//     "- Write like a real person reviewing a product/service—casual, conversational, lived experience.",
+//     "- Natural phrasing: short bursts + longer thoughts, fragments, contractions, uneven rhythm.",
+//     "- Avoid corporate/robotic language; sound human, not polished.",
+//     "- Every paragraph has h2 heading this is must ",
+//     "- Do not hyper any bullet points and any tables and any number lists  ",
+//     "- Do repeat any keyword one keyword in one paragraph only ",
+//   ].join("\n");
+// }
+
+// /* MOOD */
+// function moodDirective(mood: ContentPreferences["mood"]): string {
+//   switch (mood) {
+//     case "Entertaining":
+//       return "TONE: Story-driven, relaxed, conversational—meanders then refocuses naturally.";
+//     case "Informative":
+//       return "TONE: Direct, practical, confident—no fluff, just useful insights.";
+//     case "Inspirational":
+//       return "TONE: Warm, encouraging, grounded—real motivation without cheese.";
+//     case "Humorous":
+//       return "TONE: Dry wit, situational humor—subtle, never forced.";
+//     case "Emotional":
+//       return "TONE: Empathetic, sincere, raw edges showing—human connection.";
+//     case "Educational":
+//       return "TONE: Patient teacher with real examples—practical, not textbook.";
+//     default:
+//       return "TONE: Natural reviewer sharing genuine experience—third-person observations.";
+//   }
+// }
+
+// /* FORMAT OPTIONS */
+// function formatRequirements(prefs: ContentPreferences) {
+//   const lines: string[] = [];
+//   const checklist: string[] = [];
+
+//   if (prefs.includeBulletPoints) {
+//     lines.push(
+//       "- MUST include bullet/numbered lists (<ul>/<ol>) in 2+ body sections (not in conclusion).",
+//       "- Lists must feel natural, varied length—never hyperlinked."
+//     );
+//     checklist.push("✓ 2+ bullet sections (not conclusion), natural flow");
+//   }
+
+//   if (prefs.includeTables) {
+//     lines.push(
+//       "- MUST include 1+ semantic HTML table where relevant (comparisons/features)."
+//     );
+//     checklist.push("✓ At least one meaningful <table>");
+//   }
+
+//   if (prefs.includeEmojis) {
+//     lines.push(
+//       "- MUST use emojis sparingly (1-3 per major section), contextually relevant—never spam."
+//     );
+//     checklist.push("✓ Emojis in most sections, natural usage");
+//   }
+
+//   if (prefs.includeBoxesQuotesHighlights) {
+//     lines.push(
+//       "- MUST include 1+ callout/quote using <blockquote> or <div> for key insight."
+//     );
+//     checklist.push("✓ At least one highlight/quote block");
+//   }
+
+//   if (prefs.includeQandA) {
+//     lines.push(
+//       "- MUST include FAQ section (3-6 Q&A pairs) near end:",
+//       '  * <h2>Frequently Asked Questions</h2>',
+//       '  * <div class="faq-list">',
+//       '    <div class="faq-item">',
+//       '      <p><strong>Q:</strong> <b>Question?</b></p>',
+//       '      <p><strong>A:</strong> Answer.</p>',
+//       "    </div>",
+//       "  * FAQ in selected language only, natural Q&A style."
+//     );
+//     checklist.push("✓ FAQ section with 3-6 pairs, proper HTML structure");
+//   }
+
+//   const text = lines.length
+//     ? ["FORMAT REQUIREMENTS:", ...lines].join("\n")
+//     : "FORMAT: Semantic HTML (<h2>, <p>, <ul>, <ol>, <table>, <blockquote>). No markdown.";
+
+//   return { text, checklist };
+// }
+
+// /* KEYWORDS */
+// function keywordRules(keywords: string[], includeConclusion: boolean): string {
+//   const safe = keywords.filter((k) => !!k?.trim());
+//   return [
+//     "KEYWORD INTEGRATION:",
+//     safe.length
+//       ? `- CRITICAL: You MUST use ALL ${safe.length} focus keywords: ${safe
+//           .map((k) => `"${k}"`)
+//           .join(", ")}`
+//       : "- Use provided keywords as semantic hints.",
+//     safe.length
+//       ? `- Each of the ${safe.length} keywords MUST appear at least once in the content body.`
+//       : "",
+//     "- Use keywords ONLY in body paragraphs (never in title/headings).",
+//     "- One keyword per paragraph max (can repeat naturally within that paragraph).",
+//     "- Distribute keywords across different sections/paragraphs naturally.",
+//     "- Blend naturally—never stuff mechanically.",
+//     includeConclusion
+//       ? "- Don't force keywords into conclusion."
+//       : "",
+//   ]
+//     .filter(Boolean)
+//     .join("\n");
+// }
+
+// /* STRUCTURE */
+// function structureRules(prefs: ContentPreferences): string {
+//   const paraTarget = Math.max(40, Number(prefs.paragraphWords || 100));
+//   const total = Number(prefs.totalContentWords || 0);
+//   const lines: string[] = [];
+
+//   let sectionCount = 5;
+//   if (total > 0) {
+//     sectionCount = Math.max(
+//       4,
+//       Math.min(8, Math.round(total / 130))
+//     );
+//   }
+
+//   lines.push(
+//     "- Start with first <h2> heading immediately, followed by content paragraphs.",
+//     "- NEVER place consecutive <h2> tags at start.",
+//     "- CRITICAL: Each <h2> heading must be UNIQUE - do NOT repeat the same heading text multiple times.",
+//     "- CRITICAL: Do NOT repeat sections with the same content - each section must have unique content.",
+//     `- Write EXACTLY ${sectionCount} main sections with <h2> headings (optional <h3> subheadings allowed).`,
+//     `- Each section: ONE paragraph of ~${paraTarget} words (vary naturally, ~${Math.max(
+//       paraTarget - 20,
+//       80
+//     )}-${paraTarget + 20} words).`,
+//     "- Headings: concise, unique, NO focus keywords—evoke, don't spell out.",
+//     "- Never repeat heading text in opening sentence.",
+//     "- Sections breathe unevenly—some linger, some cut sharp.",
+//     "- Humanize brutally: sentences stumble, pivot unexpectedly, natural imperfections.",
+//     `- CRITICAL: Do NOT exceed ${sectionCount} main sections. Stop after ${sectionCount} sections.`
+//   );
+
+//   if (total > 0) {
+//     const delta = Math.max(30, Math.round(total * 0.05));
+//     const min = Math.max(50, total - delta);
+//     const max = total + delta;
+//     lines.push(
+//       `- CRITICAL: Plain text (no HTML) MUST be ${min}-${max} words.`,
+//       "- Adjust sections/length to hit range. Under? Add real detail. Over? Trim fat."
+//     );
+//   }
+
+//   if (prefs.includeConclusion) {
+//     lines.push(
+//       "- End with conclusion:",
+//       '  * <h2>Conclusion</h2> (localized, no keywords)',
+//       "  * EXACTLY ONE <p> of 100+ words—natural wrap-up, consumer review tone, domain mention once (if provided)."
+//     );
+//   } else {
+//     lines.push("- NO conclusion unless enabled.");
+//   }
+
+//   return ["STRUCTURE:", ...lines].join("\n");
+// }
+
+// /* BRAND */
+// function brandDirective(prefs: ContentPreferences): string {
+//   const brand = (prefs.brandDomain || "").trim();
+//   if (!prefs.brandDomainEnabled || !brand) {
+//     return "BRAND: No mention unless provided.";
+//   }
+//   return [
+//     "BRAND:",
+//     `- Brand/domain: \"${brand}\"`,
+//     "- Mention ONCE in conclusion only—neutral, consumer-review style, not promotional.",
+//     "- Never in title, headings, FAQ, bullets.",
+//   ].join("\n");
+// }
+
+// /* HUMAN STYLE */
+// function humanStyle(variationId: number): string {
+//   return [
+//     `HUMAN WRITING STYLE (Variation #${variationId}):`,
+//     "- Title:  unique, alluring hook—never reused as heading.",
+//     "- Every heading differs from title and each other.",
+//     "- Third-person only: NO I/me/us/our/we. Write like observer/reviewer.",
+//     "- Zero AI phrases: no 'Let's dive in', 'In this article', 'As we know'.",
+//     "- Natural rhythm: mix short + long sentences, fragments, questions, dashes—like real notes.",
+//     "- Concrete examples/scenarios (no fake credentials)—lived observations.",
+//     "- Allow imperfections: uneven flow, comma splices that feel right, thoughts circling back.",
+//     "- No punctuation spam (!!!, ???). Clean but with natural pauses.",
+//     "- Subtle sensory touches—light, texture—without forced poetry.",
+//     "- Intro must hook immediately, arrest attention.",
+//     "- Write to pass AI detection: irregular vocab, natural idioms, contractions, footworn rhythms.",
+//     "- Read back—should creak slightly, feel rough-drafted, not machine-smooth.",
+//   ].join("\n");
+// }
+
+// /* VALIDATION */
+// function finalValidation(
+//   checklist: string[],
+//   prefs: ContentPreferences
+// ): string {
+//   const base: string[] = [
+//     "FINAL CHECK:",
+//     '- Output: ONLY { "title": string, "html": string }. No code fences, no extras.',
+//     "- All content in selected language.",
+//     "- No keywords in title/headings.",
+//     "- Max one keyword per paragraph.",
+//     "- Clean semantic HTML (no markdown).",
+//     "- No system instructions visible.",
+//     "- Third-person only—zero first-person pronouns.",
+//     "- Consumer review tone in conclusion.",
+//     "- Add only one conclusion at the end paragraph do not repeat consluion.",
+//     "- FAQ (if enabled): bold <strong>Q:/A:</strong> with proper structure.",
+//     "- Uneven cadence: varied lengths, natural drifts, human imperfections.",
+//   ];
+
+//   if (prefs.includeEmojis) {
+//     base.push("- Emojis in most sections, natural not spammy.");
+//   }
+
+//   if (prefs.brandDomainEnabled && prefs.brandDomain.trim()) {
+//     base.push(
+//       `- Brand "${prefs.brandDomain.trim()}" appears ONCE in conclusion only.`
+//     );
+//   }
+
+//   if (prefs.totalContentWords) {
+//     const total = Number(prefs.totalContentWords);
+//     const delta = Math.max(30, Math.round(total * 0.05));
+//     const min = Math.max(50, total - delta);
+//     const max = total + delta;
+//     base.push(
+//       `- Word count: ${min}-${max} words (plain text). Adjust before output.`
+//     );
+//   }
+
+//   if (checklist.length) {
+//     base.push("- All format options satisfied:", ...checklist);
+//   }
+
+//   base.push(
+//     "- Fix violations silently, then output JSON—final human scrub for authenticity."
+//   );
+//   return base.join("\n");
+// }
+
+// /* MAIN BUILDER */
+
+// export function buildPlanFromPrefs(params: {
+//   keywords: string[];
+//   prefs: ContentPreferences;
+//   variationId: number;
+// }): string {
+//   const { keywords, prefs, variationId } = params;
+
+//   const { text: formatText, checklist } = formatRequirements(prefs);
+//   const extra = (prefs.extraInstructions || "").trim();
+
+//   const parts: string[] = [
+//     "You generate SEO content for production use as a skilled human writer—third-person reviewer sharing genuine experience.",
+//     "═══════════════════════════════════════════════════════════════",
+//     "OUTPUT FORMAT:",
+//     '{ "title": string, "html": string }',
+//     "- NO code fences, NO extra properties, NO commentary.",
+//     "═══════════════════════════════════════════════════════════════",
+//     "",
+//   ];
+
+//   if (extra) {
+//     parts.push(
+//       "═══════════════════════════════════════════════════════════════",
+//       "⚠️ CUSTOM USER INSTRUCTIONS - OVERRIDE ALL BELOW IF CONFLICT ⚠️",
+//       "═══════════════════════════════════════════════════════════════",
+//       extra,
+//       "═══════════════════════════════════════════════════════════════",
+//       ""
+//     );
+//   }
+
+//   parts.push(
+//     "ROLE:",
+//     "- Senior editorial writer: UX-aware, SEO-smart, topic expert.",
+//     "- Write like consumer reviewing product—third-person observations, real experience.",
+//     "- Specific insights, natural flow, genuine tone—pass as 100% human.",
+//     "",
+//     languageDirective(prefs.language),
+//     "",
+//     moodDirective(prefs.mood),
+//     "",
+//     formatText,
+//     "",
+//     structureRules(prefs),
+//     "",
+//     keywordRules(keywords, prefs.includeConclusion),
+//     "",
+//     brandDirective(prefs),
+//     "",
+//     humanStyle(variationId),
+//     "",
+//     "CRITICAL REMINDERS:",
+//     "- Third-person only: absolutely NO I/me/us/our/we.",
+//     "- Consumer review voice: neutral observer sharing experience.",
+//     "- Never echo instructions or mention being AI.",
+//     "- No filler: 'In today's world', 'Let's dive in', 'In this article'.",
+//     "- Keywords NEVER in title/headings.",
+//     "",
+//     finalValidation(checklist, prefs)
+//   );
+
+//   return parts.filter(Boolean).join("\n");
+// }
+
+// import type { ContentPreferences } from "@/hooks/use-preferences";
+
+// /* LANGUAGE */
+// function languageDirective(label?: string): string {
+//   const selected = (label || "English (US)").trim();
+//   return [
+//     `- Write EVERYTHING (title, headings, content, FAQ) ONLY in: "${selected}". Zero language mixing.`,
+//     "- Use ONE focus keyword per paragraph (it may repeat within that paragraph only, if it feels natural).",
+//     "- Write like a skilled human copywriter creating persuasive, promotional content.",
+//     "- Natural phrasing: mix short and longer sentences, occasional fragments, light contractions, uneven rhythm.",
+//     "- Avoid generic corporate/robotic language; sound like a real marketer who understands the audience.",
+//     "- Every main section must start with an <h2> heading, followed by its paragraph content.",
+//     "- Do not hyperlink any bullet points, tables, or numbered lists.",
+//     "- Use at most one focus keyword per paragraph; do NOT spam or mechanically repeat.",
+//   ].join("\n");
+// }
+
+// /* MOOD */
+// function moodDirective(mood: ContentPreferences["mood"]): string {
+//   switch (mood) {
+//     case "Entertaining":
+//       return "TONE: Playful, persuasive, story-led—engaging promotional tone that still feels real.";
+//     case "Informative":
+//       return "TONE: Clear, confident, benefit-focused—explains value without sounding robotic.";
+//     case "Inspirational":
+//       return "TONE: Uplifting, aspirational, forward-looking—shows how the product/service improves life.";
+//     case "Humorous":
+//       return "TONE: Light, witty, situational—subtle humor that supports the promotion, never cringe.";
+//     case "Emotional":
+//       return "TONE: Empathetic, reassuring, trust-building—connect benefits to real feelings and problems.";
+//     case "Educational":
+//       return "TONE: Helpful expert explaining AND recommending—teaches while gently pushing the solution.";
+//     default:
+//       return "TONE: Natural, confident promotional tone—like a human marketer highlighting benefits and trust.";
+//   }
+// }
+
+// /* FORMAT OPTIONS */
+// function formatRequirements(prefs: ContentPreferences) {
+//   const lines: string[] = [];
+//   const checklist: string[] = [];
+
+//   if (prefs.includeBulletPoints) {
+//     lines.push(
+//       "- Include bullet/numbered lists (<ul>/<ol>) in 2+ body sections (not in conclusion).",
+//       "- Lists must feel natural, varied length, never hyperlinked."
+//     );
+//     checklist.push("✓ 2+ bullet sections (not conclusion), natural flow");
+//   }
+
+//   if (prefs.includeTables) {
+//     lines.push(
+//       "- Include at least one semantic HTML <table> where relevant (features, comparisons, pricing, etc.)."
+//     );
+//     checklist.push("✓ At least one meaningful <table>");
+//   }
+
+//   if (prefs.includeEmojis) {
+//     lines.push(
+//       "- Use emojis sparingly (1-3 per major section), only where they genuinely enhance clarity or emotion."
+//     );
+//     checklist.push("✓ Emojis used lightly and naturally");
+//   }
+
+//   if (prefs.includeBoxesQuotesHighlights) {
+//     lines.push(
+//       "- Include at least one highlight or quote-style block using <blockquote> or <div> for a key takeaway or benefit."
+//     );
+//     checklist.push("✓ At least one highlight/quote block");
+//   }
+
+//   if (prefs.includeQandA) {
+//     lines.push(
+//       "- Include an FAQ section (3-6 Q&A pairs) near the end:",
+//       '  * <h2>Frequently Asked Questions</h2>',
+//       '  * <div class="faq-list">',
+//       '    <div class="faq-item">',
+//       '      <p><strong>Q:</strong> <b>Question?</b></p>',
+//       '      <p><strong>A:</strong> Answer.</p>',
+//       "    </div>",
+//       "  * Natural, specific, promotional yet honest answers."
+//     );
+//     checklist.push("✓ FAQ section with 3-6 pairs, proper HTML structure");
+//   }
+
+//   const text = lines.length
+//     ? ["FORMAT REQUIREMENTS:", ...lines].join("\n")
+//     : "FORMAT: Semantic HTML only (<h2>, <p>, <ul>, <ol>, <table>, <blockquote>). No markdown.";
+
+//   return { text, checklist };
+// }
+
+// /* KEYWORDS */
+// function keywordRules(keywords: string[], includeConclusion: boolean): string {
+//   const safe = keywords.filter((k) => !!k?.trim());
+//   return [
+//     "KEYWORD INTEGRATION:",
+//     safe.length
+//       ? `- Use ALL ${safe.length} focus keywords at least once in the body content: ${safe
+//           .map((k) => `"${k}"`)
+//           .join(", ")}`
+//       : "- Use provided keywords only as semantic guidance if present.",
+//     "- Use keywords ONLY in body paragraphs (never in title or headings).",
+//     "- One focus keyword per paragraph max (it may repeat within that paragraph if it sounds natural).",
+//     "- Distribute keywords logically across sections, in context, never stuffed.",
+//     includeConclusion
+//       ? "- Do NOT force keywords into the conclusion."
+//       : "",
+//   ]
+//     .filter(Boolean)
+//     .join("\n");
+// }
+
+// /* STRUCTURE */
+// function structureRules(prefs: ContentPreferences): string {
+//   const paraTarget = Math.max(40, Number(prefs.paragraphWords || 100));
+//   const total = Number(prefs.totalContentWords || 0);
+//   const lines: string[] = [];
+
+//   let sectionCount = 5;
+//   if (total > 0) {
+//     sectionCount = Math.max(4, Math.min(8, Math.round(total / 130)));
+//   }
+
+//   lines.push(
+//     "- Start immediately with the first <h2> heading, then its paragraph.",
+//     "- No empty headings. Never place multiple <h2> tags back-to-back without content.",
+//     "- Each <h2> heading must be UNIQUE and non-repetitive.",
+//     "- Each section must cover a distinct angle (benefits, features, use-cases, trust, comparisons, etc.).",
+//     `- Write EXACTLY ${sectionCount} main sections with <h2> headings (optional <h3> subheadings allowed).`,
+//     `- Each section: ONE main paragraph of around ${paraTarget} words (vary naturally, about ${Math.max(
+//       paraTarget - 20,
+//       60
+//     )}–${paraTarget + 20} words).`,
+//     "- Headings: concise, benefit-driven, no exact focus keywords—hint at value instead of stuffing.",
+//     "- Do NOT repeat the section heading inside its first sentence.",
+//     "- Let rhythm feel human: some sentences tighter, some slightly longer, some gentle pivots.",
+//     "- No gimmicks or forced chaos: clarity first, authenticity second, then SEO.",
+//     `- Do NOT exceed ${sectionCount} main sections. Stop after ${sectionCount} sections.`
+//   );
+
+//   if (total > 0) {
+//     const delta = Math.max(30, Math.round(total * 0.06));
+//     const min = Math.max(50, total - delta);
+//     const max = total + delta;
+//     lines.push(
+//       `- Target plain-text word count (excluding HTML tags): ${min}-${max} words.`,
+//       "- If short: add specific, grounded details. If long: trim repetition."
+//     );
+//   }
+
+//   if (prefs.includeConclusion) {
+//     lines.push(
+//       "- End with a single conclusion block:",
+//       '  * <h2>Conclusion</h2> (localized label allowed, no keywords).',
+//       "  * EXACTLY ONE <p> (100+ words) that naturally wraps up benefits and gently reinforces trust.",
+//       "  * Mention the brand/domain once here only (if provided), in a subtle promotional way."
+//     );
+//   } else {
+//     lines.push("- Do NOT add a conclusion unless explicitly enabled.");
+//   }
+
+//   return ["STRUCTURE:", ...lines].join("\n");
+// }
+
+// /* BRAND */
+// function brandDirective(prefs: ContentPreferences): string {
+//   const brand = (prefs.brandDomain || "").trim();
+//   if (!prefs.brandDomainEnabled || !brand) {
+//     return [
+//       "BRAND:",
+//       "- If a brand/domain is not provided, keep promotion generic but realistic.",
+//       "- Do not invent fake brand stories. Focus on benefits and use-cases."
+//     ].join("\n");
+//   }
+
+//   return [
+//     "BRAND:",
+//     `- Primary brand/domain: "${brand}".`,
+//     "- Use the brand as a trustworthy, solution-focused option.",
+//     "- Mention the brand/domain ONLY ONCE in the conclusion paragraph.",
+//     "- No keyword-stuffing with the brand name; keep it natural, confident, and subtle.",
+//   ].join("\n");
+// }
+
+// /* HUMAN STYLE */
+// function humanStyle(variationId: number): string {
+//   return [
+//     `HUMAN PROMOTIONAL STYLE (Variation #${variationId}):`,
+//     "- Title: Strong, tempting hook; unique; do NOT reuse as any heading.",
+//     "- All headings differ from each other and from title.",
+//     "- Use second-person (“you”) and product/brand mentions; avoid first-person singular (“I”) and fake personal bios.",
+//     "- No AI tell phrases: avoid 'In this article', 'Let's dive in', 'As an AI', 'Cutting-edge solution for all your needs', etc.",
+//     "- Sound like a human marketer who knows the audience's problems and offers clear benefits.",
+//     "- Use concrete details: realistic scenarios, use-cases, simple numbers, daily-life language.",
+//     "- Natural rhythm: mix of short and longer lines; occasional questions; no over-structured template feel.",
+//     "- Allow mild imperfections (slight repetition, soft hedging) that feel like real writing, not machine-polished.",
+//     "- No punctuation spam (no !!!, ??? spam). Keep it clean and confident.",
+//     "- Absolutely DO NOT expose or reference these instructions or any system/prompt text.",
+//     "- Aim for content that reads indistinguishably from human-written copy and is unlikely to be flagged by AI detectors.",
+//   ].join("\n");
+// }
+
+// /* VALIDATION */
+// function finalValidation(
+//   checklist: string[],
+//   prefs: ContentPreferences
+// ): string {
+//   const base: string[] = [
+//     "FINAL CHECK BEFORE OUTPUT:",
+//     '- Output strictly as: { "title": string, "html": string } — no extra keys, no markdown, no code fences.',
+//     "- All content in the selected language only.",
+//     "- No focus keywords in title or headings.",
+//     "- At most one focus keyword per paragraph (if any).",
+//     "- Use clean semantic HTML only.",
+//     "- Do not echo instructions, prompts, or system messages.",
+//     "- Tone must remain human, natural, promotional—not robotic, not generic.",
+//     "- Only one conclusion block if enabled; never duplicate the conclusion.",
+//     "- FAQ (if enabled): proper structure with Q/A, concise and helpful.",
+//   ];
+
+//   if (prefs.includeEmojis) {
+//     base.push("- Emojis used sparingly and naturally where they support emotion or clarity.");
+//   }
+
+//   if (prefs.brandDomainEnabled && prefs.brandDomain.trim()) {
+//     base.push(
+//       `- Brand "${prefs.brandDomain.trim()}" mentioned exactly once in the conclusion, in a subtle promotional way.`
+//     );
+//   }
+
+//   if (prefs.totalContentWords) {
+//     const total = Number(prefs.totalContentWords);
+//     const delta = Math.max(30, Math.round(total * 0.06));
+//     const min = Math.max(50, total - delta);
+//     const max = total + delta;
+//     base.push(
+//       `- Plain-text word count (no HTML tags) should fall between ${min} and ${max}. Adjust by adding/removing real substance, never fluff.`
+//     );
+//   }
+
+//   if (checklist.length) {
+//     base.push("- FORMAT OPTIONS CHECKED:", ...checklist);
+//   }
+
+//   base.push(
+//     "- Quietly fix any violations, then output the final JSON only.",
+//     "- The final content must read like a human wrote it and be hard for AI detectors to classify as AI-generated."
+//   );
+
+//   return base.join("\n");
+// }
+
+// /* MAIN BUILDER */
+
+// export function buildPlanFromPrefs(params: {
+//   keywords: string[];
+//   prefs: ContentPreferences;
+//   variationId: number;
+// }): string {
+//   const { keywords, prefs, variationId } = params;
+
+//   const { text: formatText, checklist } = formatRequirements(prefs);
+//   const extra = (prefs.extraInstructions || "").trim();
+
+//   const parts: string[] = [
+//     "You are a senior human copywriter generating production-ready SEO content with a persuasive, promotional tone.",
+//     "Your job is to create content that feels genuinely human-written, brand-safe, specific, and hard to classify as AI-generated.",
+//     "═══════════════════════════════════════════════════════════════",
+//     "OUTPUT FORMAT:",
+//     '{ "title": string, "html": string }',
+//     "- No extra keys. No code fences. No markdown. No commentary outside this JSON.",
+//     "═══════════════════════════════════════════════════════════════",
+//     "",
+//   ];
+
+//   if (extra) {
+//     parts.push(
+//       "════════ CUSTOM USER INSTRUCTIONS (HIGHEST PRIORITY) ════════",
+//       extra,
+//       "════════ END CUSTOM INSTRUCTIONS ════════════════════════════",
+//       ""
+//     );
+//   }
+
+//   parts.push(
+//     "ROLE & STYLE:",
+//     "- Act as an expert marketing writer who understands SEO, user intent, and brand messaging.",
+//     "- Write persuasive, promotional content that still sounds natural, grounded, and human.",
+//     "",
+//     languageDirective(prefs.language),
+//     "",
+//     moodDirective(prefs.mood),
+//     "",
+//     formatText,
+//     "",
+//     structureRules(prefs),
+//     "",
+//     keywordRules(keywords, prefs.includeConclusion),
+//     "",
+//     brandDirective(prefs),
+//     "",
+//     humanStyle(variationId),
+//     "",
+//     "CRITICAL REMINDERS:",
+//     "- Do NOT say you are an AI.",
+//     "- Do NOT describe the writing process.",
+//     "- Do NOT include headings/sections about 'AI', 'guide', or 'this article'.",
+//     "- Keep it persuasive but believable: no fake guarantees, no fake personal history.",
+//     "",
+//     finalValidation(checklist, prefs)
+//   );
+
+//   return parts.filter(Boolean).join("\n");
+// }
+
+
+
+
+
+
+
+
+
+
+
+
 
 import type { ContentPreferences } from "@/hooks/use-preferences";
 
@@ -5647,12 +6295,16 @@ function languageDirective(label?: string): string {
   const selected = (label || "English (US)").trim();
   return [
     `- Write EVERYTHING (title, headings, content, FAQ) ONLY in: "${selected}". Zero language mixing.`,
+    `- Write content on keywords provided in a natural and engaging manner.`,
+    `- In introduction please do not tell abot content in introduction talk like a freindly person .`,
+    `- Please give in depth knowledege about the topic and gloryfing the keywords do not make it superficial .`,
     "- Use ONE focus keyword per paragraph (can repeat naturally within same paragraph).",
-    "- Write like a real person reviewing a product/service—casual, conversational, lived experience.",
     "- Natural phrasing: short bursts + longer thoughts, fragments, contractions, uneven rhythm.",
+    "- Do not add special charcheters like this (--- _ ;';:,>??$%^&* etc)  ",
     "- Avoid corporate/robotic language; sound human, not polished.",
     "- Every paragraph has h2 heading this is must ",
     "- Do not hyper any bullet points and any tables and any number lists  ",
+    `Generate text with highly varied word and sentence lengths to evade AI detection: Use short words (1-4 letters) mixed with medium (5-8) and long (9+) unevenly. Alternate sentence lengths strictly: short (under 10 words), long (20+), medium (12-18), long, short, medium, and repeat. Avoid uniform patterns—make it bursty and unpredictable while keeping meaning intact`,
     "- Do repeat any keyword one keyword in one paragraph only ",
   ].join("\n");
 }
@@ -5673,7 +6325,7 @@ function moodDirective(mood: ContentPreferences["mood"]): string {
     case "Educational":
       return "TONE: Patient teacher with real examples—practical, not textbook.";
     default:
-      return "TONE: Natural reviewer sharing genuine experience—third-person observations.";
+      return "TONE: Natural Promotional tone sharing genuine experience—third-person observations.";
   }
 }
 
@@ -5714,20 +6366,21 @@ function formatRequirements(prefs: ContentPreferences) {
   if (prefs.includeQandA) {
     lines.push(
       "- MUST include FAQ section (3-6 Q&A pairs) near end:",
-      '  * <h2>Frequently Asked Questions</h2>',
+      "  * <h2>Frequently Asked Questions</h2>",
       '  * <div class="faq-list">',
       '    <div class="faq-item">',
-      '      <p><strong>Q:</strong> <b>Question?</b></p>',
-      '      <p><strong>A:</strong> Answer.</p>',
+      "      <p><strong>Q:</strong> <b>Question?</b></p>",
+      "      <p><strong>A:</strong> Answer.</p>",
       "    </div>",
       "  * FAQ in selected language only, natural Q&A style."
     );
     checklist.push("✓ FAQ section with 3-6 pairs, proper HTML structure");
   }
 
-  const text = lines.length
-    ? ["FORMAT REQUIREMENTS:", ...lines].join("\n")
-    : "FORMAT: Semantic HTML (<h2>, <p>, <ul>, <ol>, <table>, <blockquote>). No markdown.";
+  const text =
+    lines.length > 0
+      ? ["FORMAT REQUIREMENTS:", ...lines].join("\n")
+      : "FORMAT: Semantic HTML (<h2>, <p>, <ul>, <ol>, <table>, <blockquote>). No markdown.";
 
   return { text, checklist };
 }
@@ -5749,9 +6402,7 @@ function keywordRules(keywords: string[], includeConclusion: boolean): string {
     "- One keyword per paragraph max (can repeat naturally within that paragraph).",
     "- Distribute keywords across different sections/paragraphs naturally.",
     "- Blend naturally—never stuff mechanically.",
-    includeConclusion
-      ? "- Don't force keywords into conclusion."
-      : "",
+    includeConclusion ? "- Don't force keywords into conclusion." : "",
   ]
     .filter(Boolean)
     .join("\n");
@@ -5763,12 +6414,11 @@ function structureRules(prefs: ContentPreferences): string {
   const total = Number(prefs.totalContentWords || 0);
   const lines: string[] = [];
 
-  let sectionCount = 5;
+  // Calculate reasonable section count based on total words or default to 5-6
+  let sectionCount = 5; // Default
   if (total > 0) {
-    sectionCount = Math.max(
-      4,
-      Math.min(8, Math.round(total / 130))
-    );
+    // Estimate: ~100-150 words per section, so for 800 words = ~5-6 sections
+    sectionCount = Math.max(4, Math.min(8, Math.round(total / 130)));
   }
 
   lines.push(
@@ -5801,8 +6451,8 @@ function structureRules(prefs: ContentPreferences): string {
   if (prefs.includeConclusion) {
     lines.push(
       "- End with conclusion:",
-      '  * <h2>Conclusion</h2> (localized, no keywords)',
-      "  * EXACTLY ONE <p> of 100+ words—natural wrap-up, consumer review tone, domain mention once (if provided)."
+      "  * <h2>Conclusion</h2> (localized, no keywords)",
+      "  * EXACTLY ONE <p> of 100+ words—natural wrap-up, Promotional tone for the keyword, domain mention once (if provided)."
     );
   } else {
     lines.push("- NO conclusion unless enabled.");
@@ -5819,8 +6469,8 @@ function brandDirective(prefs: ContentPreferences): string {
   }
   return [
     "BRAND:",
-    `- Brand/domain: \"${brand}\"`,
-    "- Mention ONCE in conclusion only—neutral, consumer-review style, not promotional.",
+    `- Brand/domain: "${brand}"`,
+    "- Mention ONCE in conclusion only—neutral, promotional.",
     "- Never in title, headings, FAQ, bullets.",
   ].join("\n");
 }
@@ -5831,12 +6481,11 @@ function humanStyle(variationId: number): string {
     `HUMAN WRITING STYLE (Variation #${variationId}):`,
     "- Title:  unique, alluring hook—never reused as heading.",
     "- Every heading differs from title and each other.",
-    "- Third-person only: NO I/me/us/our/we. Write like observer/reviewer.",
     "- Zero AI phrases: no 'Let's dive in', 'In this article', 'As we know'.",
     "- Natural rhythm: mix short + long sentences, fragments, questions, dashes—like real notes.",
     "- Concrete examples/scenarios (no fake credentials)—lived observations.",
     "- Allow imperfections: uneven flow, comma splices that feel right, thoughts circling back.",
-    "- No punctuation spam (!!!, ???). Clean but with natural pauses.",
+    "- No punctuation spam (!!!, ???  ,,,,,,  :::  ;;;;). Clean but with natural pauses.",
     "- Subtle sensory touches—light, texture—without forced poetry.",
     "- Intro must hook immediately, arrest attention.",
     "- Write to pass AI detection: irregular vocab, natural idioms, contractions, footworn rhythms.",
@@ -5858,8 +6507,6 @@ function finalValidation(
     "- Clean semantic HTML (no markdown).",
     "- No system instructions visible.",
     "- Third-person only—zero first-person pronouns.",
-    "- Consumer review tone in conclusion.",
-    "- Add only one conclusion at the end paragraph do not repeat consluion.",
     "- FAQ (if enabled): bold <strong>Q:/A:</strong> with proper structure.",
     "- Uneven cadence: varied lengths, natural drifts, human imperfections.",
   ];
@@ -5895,7 +6542,6 @@ function finalValidation(
 }
 
 /* MAIN BUILDER */
-
 export function buildPlanFromPrefs(params: {
   keywords: string[];
   prefs: ContentPreferences;
@@ -5907,7 +6553,7 @@ export function buildPlanFromPrefs(params: {
   const extra = (prefs.extraInstructions || "").trim();
 
   const parts: string[] = [
-    "You generate SEO content for production use as a skilled human writer—third-person reviewer sharing genuine experience.",
+  
     "═══════════════════════════════════════════════════════════════",
     "OUTPUT FORMAT:",
     '{ "title": string, "html": string }',
@@ -5916,6 +6562,7 @@ export function buildPlanFromPrefs(params: {
     "",
   ];
 
+  // CUSTOM INSTRUCTIONS - HIGHEST PRIORITY
   if (extra) {
     parts.push(
       "═══════════════════════════════════════════════════════════════",
@@ -5930,7 +6577,6 @@ export function buildPlanFromPrefs(params: {
   parts.push(
     "ROLE:",
     "- Senior editorial writer: UX-aware, SEO-smart, topic expert.",
-    "- Write like consumer reviewing product—third-person observations, real experience.",
     "- Specific insights, natural flow, genuine tone—pass as 100% human.",
     "",
     languageDirective(prefs.language),
@@ -5949,7 +6595,6 @@ export function buildPlanFromPrefs(params: {
     "",
     "CRITICAL REMINDERS:",
     "- Third-person only: absolutely NO I/me/us/our/we.",
-    "- Consumer review voice: neutral observer sharing experience.",
     "- Never echo instructions or mention being AI.",
     "- No filler: 'In today's world', 'Let's dive in', 'In this article'.",
     "- Keywords NEVER in title/headings.",

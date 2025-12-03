@@ -8878,919 +8878,919 @@
 
 
 
-import { useState, startTransition } from "react";
-import { toast } from "sonner";
-import { useLocalStorage } from "@/hooks/use-local-storage";
-
-/**
- * Humanizer v6
- *
- * Goals:
- * - Make model content read naturally & personally
- * - Preserve key semantics & critical tokens (brands, domains, URLs, numbers)
- * - Avoid weird artifacts ($, broken URLs, random brackets, unreadable noise)
- * - Light, controlled variation so text is unique & clean
- *
- * NOTE:
- * This is for readability & stylistic variety.
- * It does NOT guarantee bypassing any AI/plagiarism detector.
- */
-
-export interface HumanizedContentItem {
-  id: string;
-  sourceId?: string;
-  originalHtml: string;
-  humanizedHtml: string;
-  createdAt: string;
-  meta?: {
-    patternScore?: number;
-    transformations?: number;
-    diffScore?: number; // 0..1 how different from original
-    aiScore?: number; // legacy-style: 0..100 (higher ~ closer to original)
-  };
-}
-
-export interface HumanizeOptions {
-  strength: number; // 0..1: how strong the transformation is
-  allowImperfect: boolean; // allow mild informal flavour
-  maxChangeRatio: number; // max fraction of chars allowed to change
-  preserveSemantics: boolean;
-  languageHint?: string;
-  aggressiveMode?: boolean; // slightly stronger paraphrase (still clean)
-}
-
-const DEFAULT_OPTIONS: HumanizeOptions = {
-  strength: 0.55,
-  allowImperfect: true,
-  maxChangeRatio: 0.55,
-  preserveSemantics: true,
-  languageHint: undefined,
-  aggressiveMode: false,
-};
-
-interface HumanizerResult {
-  html: string;
-  patternScore: number;
-  transformations: number;
-  diffScore: number;
-}
-
-interface TextProcessResult {
-  text: string;
-  transformations: number;
-  patternScore: number;
-}
-
-const NO_TOUCH_TAGS = new Set([
-  "script",
-  "style",
-  "noscript",
-  "iframe",
-  "canvas",
-  "svg",
-  "pre",
-  "code",
-]);
-
-const PROTECTED_INLINE_TAGS = new Set([
-  "b",
-  "strong",
-  "em",
-  "i",
-  "u",
-  "mark",
-  "kbd",
-  "samp",
-  "var",
-  "abbr",
-  "acronym",
-  "sub",
-  "sup",
-  "a",
-]);
-
-const HEADING_OR_LIST_TAGS = new Set([
-  "h1",
-  "h2",
-  "h3",
-  "h4",
-  "h5",
-  "h6",
-  "li",
-  "ul",
-  "ol",
-  "dt",
-  "dd",
-  "th",
-  "td",
-  "caption",
-]);
-
-interface HumanizeContext {
-  inProtectedTag: boolean;
-  inHeadingLike: boolean;
-}
-
-/* ────────────────────────────────────────────────────────────
- * Hook
- * ──────────────────────────────────────────────────────────── */
-
-export default function useHumanizeContent() {
-  const [isHumanizing, setIsHumanizing] = useState(false);
-  const [items, setItems] = useLocalStorage<HumanizedContentItem[]>(
-    "humanized-items_v6",
-    []
-  );
-
-  const humanizeHtml = async (
-    html: string,
-    opts?: Partial<HumanizeOptions>,
-    sourceId?: string
-  ): Promise<string> => {
-    const options: HumanizeOptions = { ...DEFAULT_OPTIONS, ...(opts || {}) };
-
-    try {
-      if (!html || typeof html !== "string") return html;
-
-      const result = runHumanizer(html, options);
-      const diffScore = result.diffScore;
-      const aiScore = clamp(100 * (1 - diffScore), 0, 100);
-
-      const record: HumanizedContentItem = {
-        id:
-          `${sourceId || "single"}-` +
-          `${Date.now()}-` +
-          `${Math.random().toString(36).slice(2, 8)}`,
-        sourceId,
-        originalHtml: html,
-        humanizedHtml: result.html,
-        createdAt: new Date().toISOString(),
-        meta: {
-          patternScore: result.patternScore,
-          transformations: result.transformations,
-          diffScore,
-          aiScore,
-        },
-      };
-
-      startTransition(() => {
-        setItems((prev = []) => [record, ...(prev || [])].slice(0, 400));
-      });
-
-      return result.html;
-    } catch (err) {
-      console.error("[HUMANIZE] failed:", err);
-      toast.error("Humanizer error: content left as-is.");
-      return html;
-    }
-  };
-
-  const humanizeMany = async (
-    batch: { id: string; html: string }[],
-    opts?: Partial<HumanizeOptions>
-  ): Promise<HumanizedContentItem[]> => {
-    const options: HumanizeOptions = { ...DEFAULT_OPTIONS, ...(opts || {}) };
-    if (!batch?.length) return [];
-
-    setIsHumanizing(true);
-    const out: HumanizedContentItem[] = [];
-
-    try {
-      for (const entry of batch) {
-        if (!entry?.html) continue;
-
-        const result = runHumanizer(entry.html, options);
-        const diffScore = result.diffScore;
-        const aiScore = clamp(100 * (1 - diffScore), 0, 100);
-
-        const record: HumanizedContentItem = {
-          id:
-            `${entry.id || "batch"}-` +
-            `${Date.now()}-` +
-            `${Math.random().toString(36).slice(2, 8)}`,
-          sourceId: entry.id,
-          originalHtml: entry.html,
-          humanizedHtml: result.html,
-          createdAt: new Date().toISOString(),
-          meta: {
-            patternScore: result.patternScore,
-            transformations: result.transformations,
-            diffScore,
-            aiScore,
-          },
-        };
-
-        out.push(record);
-      }
-
-      if (out.length) {
-        startTransition(() => {
-          setItems((prev = []) => [...out, ...(prev || [])].slice(0, 400));
-        });
-        toast.success(`Humanized ${out.length} item(s).`);
-      }
-
-      return out;
-    } catch (err) {
-      console.error("[HUMANIZE] batch failed:", err);
-      toast.error("Failed to humanize batch.");
-      return out;
-    } finally {
-      setIsHumanizing(false);
-    }
-  };
-
-  const clearHumanized = () => {
-    startTransition(() => setItems([]));
-    toast.success("Cleared humanized content history.");
-  };
-
-  return {
-    isHumanizing,
-    items,
-    humanizeHtml,
-    humanizeMany,
-    clearHumanized,
-  };
-}
-
-/* ────────────────────────────────────────────────────────────
- * Core Humanizer
- * ──────────────────────────────────────────────────────────── */
-
-function runHumanizer(html: string, options: HumanizeOptions): HumanizerResult {
-  if (!html) {
-    return {
-      html,
-      patternScore: 1,
-      transformations: 0,
-      diffScore: 0,
-    };
-  }
-
-  const lang = options.languageHint || detectLanguageFromContent(html);
-  const isLatin = isMostlyLatinScript(html);
-
-  // Fallback for SSR/non-DOM: treat as single text block
-  if (typeof window === "undefined" || typeof DOMParser === "undefined") {
-    const res = processText(html, options, lang, isLatin, {
-      inProtectedTag: false,
-      inHeadingLike: false,
-    });
-    return {
-      html: res.text,
-      patternScore: clamp(res.patternScore, 0, 1),
-      transformations: res.transformations,
-      diffScore: estimateDiffScore(html, res.text),
-    };
-  }
-
-  // Browser path: parse HTML & walk nodes
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(
-    `<!doctype html><html><body>${html}</body></html>`,
-    "text/html"
-  );
-  const root = doc.body;
-
-  let totalTransformations = 0;
-  let totalPatternScore = 0;
-  let textNodeCount = 0;
-
-  const initialCtx: HumanizeContext = {
-    inProtectedTag: false,
-    inHeadingLike: false,
-  };
-
-  function humanizeNode(node: Node, ctx: HumanizeContext): void {
-    if (node.nodeType === Node.TEXT_NODE) {
-      const original = (node as Text).data;
-      if (!original || !original.trim()) return;
-
-      const res = processText(original, options, lang, isLatin, ctx);
-      (node as Text).data = res.text;
-
-      totalTransformations += res.transformations;
-      totalPatternScore += res.patternScore;
-      textNodeCount++;
-      return;
-    }
-
-    if (node.nodeType === Node.ELEMENT_NODE) {
-      const el = node as Element;
-      const tag = el.tagName.toLowerCase();
-
-      if (NO_TOUCH_TAGS.has(tag)) return;
-
-      const isProtectedInline =
-        PROTECTED_INLINE_TAGS.has(tag) ||
-        (tag === "span" &&
-          (el.className || "").toLowerCase().includes("keyword"));
-
-      const isHeadingLike =
-        HEADING_OR_LIST_TAGS.has(tag) ||
-        (tag === "p" && ctx.inHeadingLike);
-
-      const nextCtx: HumanizeContext = {
-        inProtectedTag: ctx.inProtectedTag || isProtectedInline,
-        inHeadingLike: ctx.inHeadingLike || isHeadingLike,
-      };
-
-      for (let i = 0; i < el.childNodes.length; i++) {
-        humanizeNode(el.childNodes[i], nextCtx);
-      }
-    }
-  }
-
-  for (let i = 0; i < root.childNodes.length; i++) {
-    humanizeNode(root.childNodes[i], initialCtx);
-  }
-
-  const avgPatternScore =
-    textNodeCount > 0
-      ? clamp(totalPatternScore / textNodeCount, 0, 1)
-      : 1;
-
-  const finalHtml = root.innerHTML;
-
-  return {
-    html: finalHtml,
-    patternScore: avgPatternScore,
-    transformations: totalTransformations,
-    diffScore: estimateDiffScore(html, finalHtml),
-  };
-}
-
-/* ────────────────────────────────────────────────────────────
- * Text Processing Pipeline
- * ──────────────────────────────────────────────────────────── */
-
-function processText(
-  text: string,
-  options: HumanizeOptions,
-  lang: string | undefined,
-  isLatin: boolean,
-  ctx: HumanizeContext
-): TextProcessResult {
-  const original = text;
-
-  const leading = original.match(/^[ \t]+/)?.[0] ?? "";
-  const trailing = original.match(/[ \t]+$/)?.[0] ?? "";
-  let core = original.slice(leading.length, original.length - trailing.length);
-
-  if (!core.trim()) {
-    return { text: original, transformations: 0, patternScore: 1 };
-  }
-
-  let transformations = 0;
-
-  // Text inside protected inline (e.g. <a>, <strong>): only tiny spacing fixes
-  if (ctx.inProtectedTag) {
-    const safe = core.replace(/[ \t]{3,}/g, "  ");
-    if (safe !== core) transformations++;
-    return {
-      text: leading + safe + trailing,
-      transformations,
-      patternScore: 1,
-    };
-  }
-
-  const local: HumanizeOptions = { ...options };
-
-  if (ctx.inHeadingLike) {
-    // Very conservative in headings / table cells
-    local.strength = Math.min(local.strength, 0.25);
-    local.maxChangeRatio = Math.min(local.maxChangeRatio, 0.25);
-    local.allowImperfect = false;
-    local.aggressiveMode = false;
-  }
-
-  // Protect domains/URLs/emails so they never get broken
-  const protection = protectStableTokens(core);
-  let currentText = normalizeWhitespaceSoft(protection.text);
-
-  // 1) Remove boilerplate / clichés
-  const boiler = killBoilerplate(currentText);
-  currentText = boiler.text;
-  transformations += boiler.count;
-
-  if (isLatin) {
-    // 2) Light synonym/wording variation
-    const synonyms = varyWordChoice(currentText, local.strength, local.aggressiveMode);
-    currentText = synonyms.text;
-    transformations += synonyms.count;
-
-    // 3) Contractions (natural speech)
-    const contract = addContractions(currentText, local.strength);
-    currentText = contract.text;
-    transformations += contract.count;
-
-    // 4) Softer transitions
-    const connectors = softenFormalTransitions(currentText, local.strength);
-    currentText = connectors.text;
-    transformations += connectors.count;
-
-    // 5) Sentence rhythm (split too-long, merge tiny)
-    const rhythm = adjustSentenceRhythm(currentText, local.strength);
-    currentText = rhythm.text;
-    transformations += rhythm.count;
-  } else {
-    // Non-Latin: only soften absolutes
-    const soften = softenDefinitiveLanguage(currentText, local.strength);
-    currentText = soften.text;
-    transformations += soften.count;
-  }
-
-  // 6) Very light quirks (no spam) for Latin langs
-  if (local.allowImperfect && !ctx.inHeadingLike && isLatin) {
-    const quirks = injectLightHumanQuirks(currentText, local.strength, lang);
-    currentText = quirks.text;
-    transformations += quirks.count;
-  }
-
-  // Cleanup spacing / punctuation
-  currentText = fixSpacingClean(currentText);
-
-  // Restore protected tokens (e.g. yashnihalani.netlify.app)
-  currentText = restoreStableTokens(currentText, protection.map);
-
-  // Fix any unbalanced parentheses
-  currentText = fixDanglingParens(currentText);
-
-  // Enforce max change ratio so meaning/shape stays intact
-  if (local.maxChangeRatio > 0) {
-    currentText = enforceMaxChangeRatio(core, currentText, local.maxChangeRatio);
-  }
-
-  const finalText = leading + currentText + trailing;
-  const patternScore = estimatePatternScore(original, finalText);
-
-  return {
-    text: finalText,
-    transformations,
-    patternScore,
-  };
-}
-
-/* ────────────────────────────────────────────────────────────
- * Stable token protection (brands, URLs, etc.)
- * ──────────────────────────────────────────────────────────── */
-
-function protectStableTokens(text: string): { text: string; map: string[] } {
-  const map: string[] = [];
-  let out = text;
-
-  const patterns: RegExp[] = [
-    /https?:\/\/[^\s<>"']+/gi,
-    /[a-z0-9.-]+\.[a-z]{2,}(?:\/[^\s<>"']*)?/gi,
-    /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi,
-  ];
-
-  for (const re of patterns) {
-    out = out.replace(re, (match) => {
-      const key = `__PROTECTED_${map.length}__`;
-      map.push(match);
-      return key;
-    });
-  }
-
-  return { text: out, map };
-}
-
-function restoreStableTokens(text: string, map: string[]): string {
-  let out = text;
-  map.forEach((value, index) => {
-    const key = new RegExp(`__PROTECTED_${index}__`, "g");
-    out = out.replace(key, value);
-  });
-  return out;
-}
-
-/* ────────────────────────────────────────────────────────────
- * Transformations (clean & controlled)
- * ──────────────────────────────────────────────────────────── */
-
-function killBoilerplate(text: string): { text: string; count: number } {
-  const replacements: Array<[RegExp, string]> = [
-    [/in conclusion[, ]*/gi, "To wrap up, "],
-    [/to conclude[, ]*/gi, "To sum it up, "],
-    [/in summary[, ]*/gi, "In short, "],
-    [/throughout this article[, ]*/gi, ""],
-    [/in this (guide|article)[, ]*/gi, ""],
-    [/needless to say[, ]*/gi, ""],
-    [/it goes without saying[, ]*/gi, ""],
-    [/at the end of the day[, ]*/gi, "Ultimately, "],
-    [/in today's (digital )?age[, ]*/gi, "These days, "],
-  ];
-
-  let out = text;
-  let count = 0;
-
-  for (const [pattern, repl] of replacements) {
-    const before = out;
-    out = out.replace(pattern, repl);
-    if (out !== before) count++;
-  }
-
-  return { text: out, count };
-}
-
-function varyWordChoice(
-  text: string,
-  strength: number,
-  aggressive?: boolean
-): { text: string; count: number } {
-  if (strength <= 0) return { text, count: 0 };
-
-  let out = text;
-  let count = 0;
-  const factor = aggressive ? 0.9 : 0.45;
-
-  const patterns: Array<[RegExp, string[]]> = [
-    [/utilize/gi, ["use", "work with"]],
-    [/leverage/gi, ["use", "rely on"]],
-    [/significant/gi, ["important", "big"]],
-    [/ensure/gi, ["make sure", "confirm"]],
-    [/robust/gi, ["solid", "reliable"]],
-    [/comprehensive/gi, ["detailed", "thorough"]],
-    [/optimize/gi, ["improve", "refine"]],
-    [/numerous/gi, ["many", "plenty of"]],
-    [/various/gi, ["different", "a mix of"]],
-  ];
-
-  for (const [pattern, choices] of patterns) {
-    out = out.replace(pattern, (match) => {
-      if (Math.random() > strength * factor) return match;
-      count++;
-      const choice = choices[Math.floor(Math.random() * choices.length)];
-      return preserveCase(match, choice);
-    });
-  }
-
-  return { text: out, count };
-}
-
-function addContractions(
-  text: string,
-  strength: number
-): { text: string; count: number } {
-  if (strength <= 0.1) return { text, count: 0 };
-
-  let out = text;
-  let count = 0;
-
-  const groupPatterns: Array<[RegExp, (m: string, p1: string) => string]> = [
-    [/(\b[Ii]t) is\b/g, (_m, p1) => `${p1}'s`],
-    [/(\b[Tt]here) is\b/g, (_m, p1) => `${p1}'s`],
-  ];
-
-  for (const [pattern, fn] of groupPatterns) {
-    out = out.replace(pattern, (match, p1) => {
-      if (Math.random() > strength * 0.6) return match;
-      count++;
-      return fn(match, p1);
-    });
-  }
-
-  const simplePatterns: Array<[RegExp, string]> = [
-    [/ do not /gi, " don't "],
-    [/ does not /gi, " doesn't "],
-    [/ can not /gi, " can't "],
-    [/ will not /gi, " won't "],
-    [/ is not /gi, " isn't "],
-    [/ are not /gi, " aren't "],
-    [/ has not /gi, " hasn't "],
-    [/ have not /gi, " haven't "],
-  ];
-
-  for (const [pattern, repl] of simplePatterns) {
-    out = out.replace(pattern, (match) => {
-      if (Math.random() > strength * 0.5) return match;
-      count++;
-      return repl;
-    });
-  }
-
-  return { text: out, count };
-}
-
-function softenFormalTransitions(
-  text: string,
-  strength: number
-): { text: string; count: number } {
-  let out = text;
-  let count = 0;
-
-  const patterns: Array<[RegExp, string[]]> = [
-    [/however,/gi, ["But,", "Still,", "That said,"]],
-    [/moreover,/gi, ["Plus,", "Also,", "On top of that,"]],
-    [/furthermore,/gi, ["Also,", "Besides,"]],
-    [/additionally,/gi, ["Also,", "Plus,"]],
-    [/therefore,/gi, ["So,", "Because of that,"]],
-    [/consequently,/gi, ["So,", "As a result,"]],
-  ];
-
-  for (const [pattern, choices] of patterns) {
-    out = out.replace(pattern, (match) => {
-      if (Math.random() > strength * 0.5) return match;
-      count++;
-      const choice = choices[Math.floor(Math.random() * choices.length)];
-      return preserveCase(match, choice);
-    });
-  }
-
-  return { text: out, count };
-}
-
-function adjustSentenceRhythm(
-  text: string,
-  strength: number
-): { text: string; count: number } {
-  const trimmed = text.trim();
-  if (!trimmed) return { text, count: 0 };
-
-  const parts = trimmed
-    .split(/([.!?])/)
-    .map((p) => p.trim())
-    .filter((p) => p.length > 0);
-
-  if (!parts.length) return { text, count: 0 };
-
-  const result: string[] = [];
-  let count = 0;
-
-  for (let i = 0; i < parts.length; i += 2) {
-    const sentence = (parts[i] || "").trim();
-    const punct = parts[i + 1] || ".";
-
-    if (!sentence) continue;
-
-    // Split very long sentence at comma near 1/3
-    if (sentence.length > 220 && Math.random() < strength * 0.4) {
-      const idx = sentence.indexOf(",", Math.floor(sentence.length / 3));
-      if (idx > 40 && idx < sentence.length - 40) {
-        const first = sentence.slice(0, idx).trim();
-        const second = sentence.slice(idx + 1).trim();
-        if (first) result.push(first + punct);
-        if (second)
-          result.push(
-            second.charAt(0).toUpperCase() + second.slice(1) + "."
-          );
-        count++;
-        continue;
-      }
-    }
-
-    // Merge two very short sentences
-    if (
-      sentence.length < 40 &&
-      i + 3 < parts.length &&
-      Math.random() < strength * 0.25
-    ) {
-      const nextSentence = (parts[i + 2] || "").trim();
-      const nextPunct = parts[i + 3] || ".";
-      if (nextSentence && nextSentence.length < 60) {
-        const merged =
-          sentence.replace(/[.!?]+$/, "") +
-          ", " +
-          nextSentence.charAt(0).toLowerCase() +
-          nextSentence.slice(1) +
-          nextPunct;
-        result.push(merged);
-        count++;
-        i += 2;
-        continue;
-      }
-    }
-
-    result.push(sentence + punct);
-  }
-
-  return { text: result.join(" "), count };
-}
-
-function injectLightHumanQuirks(
-  text: string,
-  strength: number,
-  lang?: string
-): { text: string; count: number } {
-  let out = text;
-  let count = 0;
-
-  if (strength <= 0.2) return { text, count };
-
-  if (!lang || /^en|es|fr|de|pt|it|nl|ro|pl|tr$/i.test(lang)) {
-    out = out.replace(
-      /\b(definitely|certainly|clearly|absolutely)\b/gi,
-      (m) => {
-        if (Math.random() > strength * 0.35) return m;
-        count++;
-        const choices = [
-          "pretty much",
-          "in most cases",
-          "generally",
-          "often",
-          "usually",
-        ];
-        return choices[Math.floor(Math.random() * choices.length)];
-      }
-    );
-  }
-
-  return { text: out, count };
-}
-
-function softenDefinitiveLanguage(
-  text: string,
-  strength: number
-): { text: string; count: number } {
-  let out = text;
-  let count = 0;
-
-  out = out.replace(/\b(always|never)\b/gi, (m) => {
-    if (Math.random() > strength * 0.3) return m;
-    count++;
-    return m.toLowerCase() === "always" ? "often" : "rarely";
-  });
-
-  return { text: out, count };
-}
-
-/* ────────────────────────────────────────────────────────────
- * Spacing / punctuation cleanup
- * ──────────────────────────────────────────────────────────── */
-
-function normalizeWhitespaceSoft(text: string): string {
-  return text.replace(/[ \t]{3,}/g, "  ");
-}
-
-function fixSpacingClean(text: string): string {
-  let out = text;
-
-  // Ensure space after punctuation when needed
-  out = out.replace(/([.,!?;:])(?![\s\n\r\t"')\]}])/g, "$1 ");
-
-  // Collapse 3+ spaces to max 2
-  out = out.replace(/ {3,}/g, "  ");
-
-  // Normalize long ellipsis
-  out = out.replace(/\.{4,}/g, "...");
-
-  // Remove spaces before punctuation
-  out = out.replace(/\s+([.,!?;:])/g, "$1");
-
-  return out;
-}
-
-function fixDanglingParens(text: string): string {
-  let out = text;
-  const openCount = (out.match(/\(/g) || []).length;
-  const closeCount = (out.match(/\)/g) || []).length;
-
-  if (closeCount > openCount) {
-    let diff = closeCount - openCount;
-    out = out
-      .split("")
-      .reverse()
-      .map((ch) => {
-        if (ch === ")" && diff > 0) {
-          diff--;
-          return "";
-        }
-        return ch;
-      })
-      .reverse()
-      .join("");
-  } else if (openCount > closeCount) {
-    out += ")".repeat(openCount - closeCount);
-  }
-
-  return out;
-}
-
-/* ────────────────────────────────────────────────────────────
- * Diff / scoring helpers
- * ──────────────────────────────────────────────────────────── */
-
-function estimatePatternScore(original: string, changed: string): number {
-  if (!original || !changed) return 1;
-  if (original === changed) return 1;
-
-  const o = original.replace(/\s+/g, " ").trim();
-  const c = changed.replace(/\s+/g, " ").trim();
-  if (!o || !c) return 1;
-
-  const minLen = Math.min(o.length, c.length);
-  if (minLen === 0) return 1;
-
-  let same = 0;
-  for (let i = 0; i < minLen; i++) {
-    if (o.charAt(i) === c.charAt(i)) same++;
-  }
-
-  const similarity = same / minLen;
-  const lengthDiff =
-    Math.abs(o.split(" ").length - c.split(" ").length) /
-    Math.max(o.split(" ").length, 1);
-
-  const penalty = lengthDiff * 0.15;
-  return clamp(similarity - penalty, 0, 1);
-}
-
-/** 0..1, higher = more different */
-function estimateDiffScore(original: string, changed: string): number {
-  if (!original || !changed) return 0;
-  if (original === changed) return 0;
-
-  const o = original.replace(/\s+/g, " ").trim();
-  const c = changed.replace(/\s+/g, " ").trim();
-  if (!o || !c) return 0;
-
-  const minLen = Math.min(o.length, c.length);
-  let diff = Math.abs(o.length - c.length);
-
-  for (let i = 0; i < minLen; i++) {
-    if (o[i] !== c[i]) diff++;
-  }
-
-  return clamp(diff / Math.max(o.length, 1), 0, 1);
-}
-
-function enforceMaxChangeRatio(
-  original: string,
-  changed: string,
-  maxRatio: number
-): string {
-  if (maxRatio <= 0) return changed;
-
-  const o = original;
-  const c = changed;
-  const oLen = o.length;
-  const cLen = c.length;
-  const minLen = Math.min(oLen, cLen);
-  if (!oLen || !cLen) return changed;
-
-  let diff = Math.abs(oLen - cLen);
-  for (let i = 0; i < minLen; i++) {
-    if (o[i] !== c[i]) diff++;
-  }
-
-  const ratio = diff / oLen;
-  if (ratio <= maxRatio) return changed;
-
-  const keepHead = Math.floor(oLen * 0.55);
-  const tail = c.slice(-Math.max(0, cLen - keepHead));
-
-  return [o.slice(0, keepHead), tail].filter(Boolean).join(" ").trim();
-}
-
-/* ────────────────────────────────────────────────────────────
- * Language / script detection helpers
- * ──────────────────────────────────────────────────────────── */
-
-function clamp(n: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, n));
-}
-
-function isMostlyLatinScript(text: string): boolean {
-  const sample = text.slice(0, 800);
-  let latin = 0;
-  let nonLatin = 0;
-
-  for (let i = 0; i < sample.length; i++) {
-    const code = sample.charCodeAt(i);
-    if (
-      (code >= 0x0041 && code <= 0x005a) ||
-      (code >= 0x0061 && code <= 0x007a)
-    ) {
-      latin++;
-    } else if (code > 127 && code !== 160) {
-      nonLatin++;
-    }
-  }
-
-  if (latin === 0 && nonLatin === 0) return true;
-  return latin >= nonLatin;
-}
-
-function detectLanguageFromContent(text: string): string | undefined {
-  const sample = text.slice(0, 800);
-
-  if (/[اأإءؤئ]/.test(sample)) return "ar";
-  if (/[\u0900-\u097F]/.test(sample)) return "hi";
-  if (/[\u4e00-\u9fff]/.test(sample)) return "zh";
-  if (/[\u0400-\u04FF]/.test(sample)) return "ru";
-  if (/[\u3040-\u30ff]/.test(sample)) return "ja";
-  if (/[\uAC00-\uD7AF]/.test(sample)) return "ko";
-  if (isMostlyLatinScript(sample)) return "en";
-
-  return undefined;
-}
-
-function preserveCase(from: string, to: string): string {
-  if (!from) return to;
-  if (from[0] === from[0].toUpperCase()) {
-    return to.charAt(0).toUpperCase() + to.slice(1);
-  }
-  return to;
-}
+// import { useState, startTransition } from "react";
+// import { toast } from "sonner";
+// import { useLocalStorage } from "@/hooks/use-local-storage";
+
+// /**
+//  * Humanizer v6
+//  *
+//  * Goals:
+//  * - Make model content read naturally & personally
+//  * - Preserve key semantics & critical tokens (brands, domains, URLs, numbers)
+//  * - Avoid weird artifacts ($, broken URLs, random brackets, unreadable noise)
+//  * - Light, controlled variation so text is unique & clean
+//  *
+//  * NOTE:
+//  * This is for readability & stylistic variety.
+//  * It does NOT guarantee bypassing any AI/plagiarism detector.
+//  */
+
+// export interface HumanizedContentItem {
+//   id: string;
+//   sourceId?: string;
+//   originalHtml: string;
+//   humanizedHtml: string;
+//   createdAt: string;
+//   meta?: {
+//     patternScore?: number;
+//     transformations?: number;
+//     diffScore?: number; // 0..1 how different from original
+//     aiScore?: number; // legacy-style: 0..100 (higher ~ closer to original)
+//   };
+// }
+
+// export interface HumanizeOptions {
+//   strength: number; // 0..1: how strong the transformation is
+//   allowImperfect: boolean; // allow mild informal flavour
+//   maxChangeRatio: number; // max fraction of chars allowed to change
+//   preserveSemantics: boolean;
+//   languageHint?: string;
+//   aggressiveMode?: boolean; // slightly stronger paraphrase (still clean)
+// }
+
+// const DEFAULT_OPTIONS: HumanizeOptions = {
+//   strength: 0.55,
+//   allowImperfect: true,
+//   maxChangeRatio: 0.55,
+//   preserveSemantics: true,
+//   languageHint: undefined,
+//   aggressiveMode: false,
+// };
+
+// interface HumanizerResult {
+//   html: string;
+//   patternScore: number;
+//   transformations: number;
+//   diffScore: number;
+// }
+
+// interface TextProcessResult {
+//   text: string;
+//   transformations: number;
+//   patternScore: number;
+// }
+
+// const NO_TOUCH_TAGS = new Set([
+//   "script",
+//   "style",
+//   "noscript",
+//   "iframe",
+//   "canvas",
+//   "svg",
+//   "pre",
+//   "code",
+// ]);
+
+// const PROTECTED_INLINE_TAGS = new Set([
+//   "b",
+//   "strong",
+//   "em",
+//   "i",
+//   "u",
+//   "mark",
+//   "kbd",
+//   "samp",
+//   "var",
+//   "abbr",
+//   "acronym",
+//   "sub",
+//   "sup",
+//   "a",
+// ]);
+
+// const HEADING_OR_LIST_TAGS = new Set([
+//   "h1",
+//   "h2",
+//   "h3",
+//   "h4",
+//   "h5",
+//   "h6",
+//   "li",
+//   "ul",
+//   "ol",
+//   "dt",
+//   "dd",
+//   "th",
+//   "td",
+//   "caption",
+// ]);
+
+// interface HumanizeContext {
+//   inProtectedTag: boolean;
+//   inHeadingLike: boolean;
+// }
+
+// /* ────────────────────────────────────────────────────────────
+//  * Hook
+//  * ──────────────────────────────────────────────────────────── */
+
+// export default function useHumanizeContent() {
+//   const [isHumanizing, setIsHumanizing] = useState(false);
+//   const [items, setItems] = useLocalStorage<HumanizedContentItem[]>(
+//     "humanized-items_v6",
+//     []
+//   );
+
+//   const humanizeHtml = async (
+//     html: string,
+//     opts?: Partial<HumanizeOptions>,
+//     sourceId?: string
+//   ): Promise<string> => {
+//     const options: HumanizeOptions = { ...DEFAULT_OPTIONS, ...(opts || {}) };
+
+//     try {
+//       if (!html || typeof html !== "string") return html;
+
+//       const result = runHumanizer(html, options);
+//       const diffScore = result.diffScore;
+//       const aiScore = clamp(100 * (1 - diffScore), 0, 100);
+
+//       const record: HumanizedContentItem = {
+//         id:
+//           `${sourceId || "single"}-` +
+//           `${Date.now()}-` +
+//           `${Math.random().toString(36).slice(2, 8)}`,
+//         sourceId,
+//         originalHtml: html,
+//         humanizedHtml: result.html,
+//         createdAt: new Date().toISOString(),
+//         meta: {
+//           patternScore: result.patternScore,
+//           transformations: result.transformations,
+//           diffScore,
+//           aiScore,
+//         },
+//       };
+
+//       startTransition(() => {
+//         setItems((prev = []) => [record, ...(prev || [])].slice(0, 400));
+//       });
+
+//       return result.html;
+//     } catch (err) {
+//       console.error("[HUMANIZE] failed:", err);
+//       toast.error("Humanizer error: content left as-is.");
+//       return html;
+//     }
+//   };
+
+//   const humanizeMany = async (
+//     batch: { id: string; html: string }[],
+//     opts?: Partial<HumanizeOptions>
+//   ): Promise<HumanizedContentItem[]> => {
+//     const options: HumanizeOptions = { ...DEFAULT_OPTIONS, ...(opts || {}) };
+//     if (!batch?.length) return [];
+
+//     setIsHumanizing(true);
+//     const out: HumanizedContentItem[] = [];
+
+//     try {
+//       for (const entry of batch) {
+//         if (!entry?.html) continue;
+
+//         const result = runHumanizer(entry.html, options);
+//         const diffScore = result.diffScore;
+//         const aiScore = clamp(100 * (1 - diffScore), 0, 100);
+
+//         const record: HumanizedContentItem = {
+//           id:
+//             `${entry.id || "batch"}-` +
+//             `${Date.now()}-` +
+//             `${Math.random().toString(36).slice(2, 8)}`,
+//           sourceId: entry.id,
+//           originalHtml: entry.html,
+//           humanizedHtml: result.html,
+//           createdAt: new Date().toISOString(),
+//           meta: {
+//             patternScore: result.patternScore,
+//             transformations: result.transformations,
+//             diffScore,
+//             aiScore,
+//           },
+//         };
+
+//         out.push(record);
+//       }
+
+//       if (out.length) {
+//         startTransition(() => {
+//           setItems((prev = []) => [...out, ...(prev || [])].slice(0, 400));
+//         });
+//         toast.success(`Humanized ${out.length} item(s).`);
+//       }
+
+//       return out;
+//     } catch (err) {
+//       console.error("[HUMANIZE] batch failed:", err);
+//       toast.error("Failed to humanize batch.");
+//       return out;
+//     } finally {
+//       setIsHumanizing(false);
+//     }
+//   };
+
+//   const clearHumanized = () => {
+//     startTransition(() => setItems([]));
+//     toast.success("Cleared humanized content history.");
+//   };
+
+//   return {
+//     isHumanizing,
+//     items,
+//     humanizeHtml,
+//     humanizeMany,
+//     clearHumanized,
+//   };
+// }
+
+// /* ────────────────────────────────────────────────────────────
+//  * Core Humanizer
+//  * ──────────────────────────────────────────────────────────── */
+
+// function runHumanizer(html: string, options: HumanizeOptions): HumanizerResult {
+//   if (!html) {
+//     return {
+//       html,
+//       patternScore: 1,
+//       transformations: 0,
+//       diffScore: 0,
+//     };
+//   }
+
+//   const lang = options.languageHint || detectLanguageFromContent(html);
+//   const isLatin = isMostlyLatinScript(html);
+
+//   // Fallback for SSR/non-DOM: treat as single text block
+//   if (typeof window === "undefined" || typeof DOMParser === "undefined") {
+//     const res = processText(html, options, lang, isLatin, {
+//       inProtectedTag: false,
+//       inHeadingLike: false,
+//     });
+//     return {
+//       html: res.text,
+//       patternScore: clamp(res.patternScore, 0, 1),
+//       transformations: res.transformations,
+//       diffScore: estimateDiffScore(html, res.text),
+//     };
+//   }
+
+//   // Browser path: parse HTML & walk nodes
+//   const parser = new DOMParser();
+//   const doc = parser.parseFromString(
+//     `<!doctype html><html><body>${html}</body></html>`,
+//     "text/html"
+//   );
+//   const root = doc.body;
+
+//   let totalTransformations = 0;
+//   let totalPatternScore = 0;
+//   let textNodeCount = 0;
+
+//   const initialCtx: HumanizeContext = {
+//     inProtectedTag: false,
+//     inHeadingLike: false,
+//   };
+
+//   function humanizeNode(node: Node, ctx: HumanizeContext): void {
+//     if (node.nodeType === Node.TEXT_NODE) {
+//       const original = (node as Text).data;
+//       if (!original || !original.trim()) return;
+
+//       const res = processText(original, options, lang, isLatin, ctx);
+//       (node as Text).data = res.text;
+
+//       totalTransformations += res.transformations;
+//       totalPatternScore += res.patternScore;
+//       textNodeCount++;
+//       return;
+//     }
+
+//     if (node.nodeType === Node.ELEMENT_NODE) {
+//       const el = node as Element;
+//       const tag = el.tagName.toLowerCase();
+
+//       if (NO_TOUCH_TAGS.has(tag)) return;
+
+//       const isProtectedInline =
+//         PROTECTED_INLINE_TAGS.has(tag) ||
+//         (tag === "span" &&
+//           (el.className || "").toLowerCase().includes("keyword"));
+
+//       const isHeadingLike =
+//         HEADING_OR_LIST_TAGS.has(tag) ||
+//         (tag === "p" && ctx.inHeadingLike);
+
+//       const nextCtx: HumanizeContext = {
+//         inProtectedTag: ctx.inProtectedTag || isProtectedInline,
+//         inHeadingLike: ctx.inHeadingLike || isHeadingLike,
+//       };
+
+//       for (let i = 0; i < el.childNodes.length; i++) {
+//         humanizeNode(el.childNodes[i], nextCtx);
+//       }
+//     }
+//   }
+
+//   for (let i = 0; i < root.childNodes.length; i++) {
+//     humanizeNode(root.childNodes[i], initialCtx);
+//   }
+
+//   const avgPatternScore =
+//     textNodeCount > 0
+//       ? clamp(totalPatternScore / textNodeCount, 0, 1)
+//       : 1;
+
+//   const finalHtml = root.innerHTML;
+
+//   return {
+//     html: finalHtml,
+//     patternScore: avgPatternScore,
+//     transformations: totalTransformations,
+//     diffScore: estimateDiffScore(html, finalHtml),
+//   };
+// }
+
+// /* ────────────────────────────────────────────────────────────
+//  * Text Processing Pipeline
+//  * ──────────────────────────────────────────────────────────── */
+
+// function processText(
+//   text: string,
+//   options: HumanizeOptions,
+//   lang: string | undefined,
+//   isLatin: boolean,
+//   ctx: HumanizeContext
+// ): TextProcessResult {
+//   const original = text;
+
+//   const leading = original.match(/^[ \t]+/)?.[0] ?? "";
+//   const trailing = original.match(/[ \t]+$/)?.[0] ?? "";
+//   let core = original.slice(leading.length, original.length - trailing.length);
+
+//   if (!core.trim()) {
+//     return { text: original, transformations: 0, patternScore: 1 };
+//   }
+
+//   let transformations = 0;
+
+//   // Text inside protected inline (e.g. <a>, <strong>): only tiny spacing fixes
+//   if (ctx.inProtectedTag) {
+//     const safe = core.replace(/[ \t]{3,}/g, "  ");
+//     if (safe !== core) transformations++;
+//     return {
+//       text: leading + safe + trailing,
+//       transformations,
+//       patternScore: 1,
+//     };
+//   }
+
+//   const local: HumanizeOptions = { ...options };
+
+//   if (ctx.inHeadingLike) {
+//     // Very conservative in headings / table cells
+//     local.strength = Math.min(local.strength, 0.25);
+//     local.maxChangeRatio = Math.min(local.maxChangeRatio, 0.25);
+//     local.allowImperfect = false;
+//     local.aggressiveMode = false;
+//   }
+
+//   // Protect domains/URLs/emails so they never get broken
+//   const protection = protectStableTokens(core);
+//   let currentText = normalizeWhitespaceSoft(protection.text);
+
+//   // 1) Remove boilerplate / clichés
+//   const boiler = killBoilerplate(currentText);
+//   currentText = boiler.text;
+//   transformations += boiler.count;
+
+//   if (isLatin) {
+//     // 2) Light synonym/wording variation
+//     const synonyms = varyWordChoice(currentText, local.strength, local.aggressiveMode);
+//     currentText = synonyms.text;
+//     transformations += synonyms.count;
+
+//     // 3) Contractions (natural speech)
+//     const contract = addContractions(currentText, local.strength);
+//     currentText = contract.text;
+//     transformations += contract.count;
+
+//     // 4) Softer transitions
+//     const connectors = softenFormalTransitions(currentText, local.strength);
+//     currentText = connectors.text;
+//     transformations += connectors.count;
+
+//     // 5) Sentence rhythm (split too-long, merge tiny)
+//     const rhythm = adjustSentenceRhythm(currentText, local.strength);
+//     currentText = rhythm.text;
+//     transformations += rhythm.count;
+//   } else {
+//     // Non-Latin: only soften absolutes
+//     const soften = softenDefinitiveLanguage(currentText, local.strength);
+//     currentText = soften.text;
+//     transformations += soften.count;
+//   }
+
+//   // 6) Very light quirks (no spam) for Latin langs
+//   if (local.allowImperfect && !ctx.inHeadingLike && isLatin) {
+//     const quirks = injectLightHumanQuirks(currentText, local.strength, lang);
+//     currentText = quirks.text;
+//     transformations += quirks.count;
+//   }
+
+//   // Cleanup spacing / punctuation
+//   currentText = fixSpacingClean(currentText);
+
+//   // Restore protected tokens (e.g. yashnihalani.netlify.app)
+//   currentText = restoreStableTokens(currentText, protection.map);
+
+//   // Fix any unbalanced parentheses
+//   currentText = fixDanglingParens(currentText);
+
+//   // Enforce max change ratio so meaning/shape stays intact
+//   if (local.maxChangeRatio > 0) {
+//     currentText = enforceMaxChangeRatio(core, currentText, local.maxChangeRatio);
+//   }
+
+//   const finalText = leading + currentText + trailing;
+//   const patternScore = estimatePatternScore(original, finalText);
+
+//   return {
+//     text: finalText,
+//     transformations,
+//     patternScore,
+//   };
+// }
+
+// /* ────────────────────────────────────────────────────────────
+//  * Stable token protection (brands, URLs, etc.)
+//  * ──────────────────────────────────────────────────────────── */
+
+// function protectStableTokens(text: string): { text: string; map: string[] } {
+//   const map: string[] = [];
+//   let out = text;
+
+//   const patterns: RegExp[] = [
+//     /https?:\/\/[^\s<>"']+/gi,
+//     /[a-z0-9.-]+\.[a-z]{2,}(?:\/[^\s<>"']*)?/gi,
+//     /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi,
+//   ];
+
+//   for (const re of patterns) {
+//     out = out.replace(re, (match) => {
+//       const key = `__PROTECTED_${map.length}__`;
+//       map.push(match);
+//       return key;
+//     });
+//   }
+
+//   return { text: out, map };
+// }
+
+// function restoreStableTokens(text: string, map: string[]): string {
+//   let out = text;
+//   map.forEach((value, index) => {
+//     const key = new RegExp(`__PROTECTED_${index}__`, "g");
+//     out = out.replace(key, value);
+//   });
+//   return out;
+// }
+
+// /* ────────────────────────────────────────────────────────────
+//  * Transformations (clean & controlled)
+//  * ──────────────────────────────────────────────────────────── */
+
+// function killBoilerplate(text: string): { text: string; count: number } {
+//   const replacements: Array<[RegExp, string]> = [
+//     [/in conclusion[, ]*/gi, "To wrap up, "],
+//     [/to conclude[, ]*/gi, "To sum it up, "],
+//     [/in summary[, ]*/gi, "In short, "],
+//     [/throughout this article[, ]*/gi, ""],
+//     [/in this (guide|article)[, ]*/gi, ""],
+//     [/needless to say[, ]*/gi, ""],
+//     [/it goes without saying[, ]*/gi, ""],
+//     [/at the end of the day[, ]*/gi, "Ultimately, "],
+//     [/in today's (digital )?age[, ]*/gi, "These days, "],
+//   ];
+
+//   let out = text;
+//   let count = 0;
+
+//   for (const [pattern, repl] of replacements) {
+//     const before = out;
+//     out = out.replace(pattern, repl);
+//     if (out !== before) count++;
+//   }
+
+//   return { text: out, count };
+// }
+
+// function varyWordChoice(
+//   text: string,
+//   strength: number,
+//   aggressive?: boolean
+// ): { text: string; count: number } {
+//   if (strength <= 0) return { text, count: 0 };
+
+//   let out = text;
+//   let count = 0;
+//   const factor = aggressive ? 0.9 : 0.45;
+
+//   const patterns: Array<[RegExp, string[]]> = [
+//     [/utilize/gi, ["use", "work with"]],
+//     [/leverage/gi, ["use", "rely on"]],
+//     [/significant/gi, ["important", "big"]],
+//     [/ensure/gi, ["make sure", "confirm"]],
+//     [/robust/gi, ["solid", "reliable"]],
+//     [/comprehensive/gi, ["detailed", "thorough"]],
+//     [/optimize/gi, ["improve", "refine"]],
+//     [/numerous/gi, ["many", "plenty of"]],
+//     [/various/gi, ["different", "a mix of"]],
+//   ];
+
+//   for (const [pattern, choices] of patterns) {
+//     out = out.replace(pattern, (match) => {
+//       if (Math.random() > strength * factor) return match;
+//       count++;
+//       const choice = choices[Math.floor(Math.random() * choices.length)];
+//       return preserveCase(match, choice);
+//     });
+//   }
+
+//   return { text: out, count };
+// }
+
+// function addContractions(
+//   text: string,
+//   strength: number
+// ): { text: string; count: number } {
+//   if (strength <= 0.1) return { text, count: 0 };
+
+//   let out = text;
+//   let count = 0;
+
+//   const groupPatterns: Array<[RegExp, (m: string, p1: string) => string]> = [
+//     [/(\b[Ii]t) is\b/g, (_m, p1) => `${p1}'s`],
+//     [/(\b[Tt]here) is\b/g, (_m, p1) => `${p1}'s`],
+//   ];
+
+//   for (const [pattern, fn] of groupPatterns) {
+//     out = out.replace(pattern, (match, p1) => {
+//       if (Math.random() > strength * 0.6) return match;
+//       count++;
+//       return fn(match, p1);
+//     });
+//   }
+
+//   const simplePatterns: Array<[RegExp, string]> = [
+//     [/ do not /gi, " don't "],
+//     [/ does not /gi, " doesn't "],
+//     [/ can not /gi, " can't "],
+//     [/ will not /gi, " won't "],
+//     [/ is not /gi, " isn't "],
+//     [/ are not /gi, " aren't "],
+//     [/ has not /gi, " hasn't "],
+//     [/ have not /gi, " haven't "],
+//   ];
+
+//   for (const [pattern, repl] of simplePatterns) {
+//     out = out.replace(pattern, (match) => {
+//       if (Math.random() > strength * 0.5) return match;
+//       count++;
+//       return repl;
+//     });
+//   }
+
+//   return { text: out, count };
+// }
+
+// function softenFormalTransitions(
+//   text: string,
+//   strength: number
+// ): { text: string; count: number } {
+//   let out = text;
+//   let count = 0;
+
+//   const patterns: Array<[RegExp, string[]]> = [
+//     [/however,/gi, ["But,", "Still,", "That said,"]],
+//     [/moreover,/gi, ["Plus,", "Also,", "On top of that,"]],
+//     [/furthermore,/gi, ["Also,", "Besides,"]],
+//     [/additionally,/gi, ["Also,", "Plus,"]],
+//     [/therefore,/gi, ["So,", "Because of that,"]],
+//     [/consequently,/gi, ["So,", "As a result,"]],
+//   ];
+
+//   for (const [pattern, choices] of patterns) {
+//     out = out.replace(pattern, (match) => {
+//       if (Math.random() > strength * 0.5) return match;
+//       count++;
+//       const choice = choices[Math.floor(Math.random() * choices.length)];
+//       return preserveCase(match, choice);
+//     });
+//   }
+
+//   return { text: out, count };
+// }
+
+// function adjustSentenceRhythm(
+//   text: string,
+//   strength: number
+// ): { text: string; count: number } {
+//   const trimmed = text.trim();
+//   if (!trimmed) return { text, count: 0 };
+
+//   const parts = trimmed
+//     .split(/([.!?])/)
+//     .map((p) => p.trim())
+//     .filter((p) => p.length > 0);
+
+//   if (!parts.length) return { text, count: 0 };
+
+//   const result: string[] = [];
+//   let count = 0;
+
+//   for (let i = 0; i < parts.length; i += 2) {
+//     const sentence = (parts[i] || "").trim();
+//     const punct = parts[i + 1] || ".";
+
+//     if (!sentence) continue;
+
+//     // Split very long sentence at comma near 1/3
+//     if (sentence.length > 220 && Math.random() < strength * 0.4) {
+//       const idx = sentence.indexOf(",", Math.floor(sentence.length / 3));
+//       if (idx > 40 && idx < sentence.length - 40) {
+//         const first = sentence.slice(0, idx).trim();
+//         const second = sentence.slice(idx + 1).trim();
+//         if (first) result.push(first + punct);
+//         if (second)
+//           result.push(
+//             second.charAt(0).toUpperCase() + second.slice(1) + "."
+//           );
+//         count++;
+//         continue;
+//       }
+//     }
+
+//     // Merge two very short sentences
+//     if (
+//       sentence.length < 40 &&
+//       i + 3 < parts.length &&
+//       Math.random() < strength * 0.25
+//     ) {
+//       const nextSentence = (parts[i + 2] || "").trim();
+//       const nextPunct = parts[i + 3] || ".";
+//       if (nextSentence && nextSentence.length < 60) {
+//         const merged =
+//           sentence.replace(/[.!?]+$/, "") +
+//           ", " +
+//           nextSentence.charAt(0).toLowerCase() +
+//           nextSentence.slice(1) +
+//           nextPunct;
+//         result.push(merged);
+//         count++;
+//         i += 2;
+//         continue;
+//       }
+//     }
+
+//     result.push(sentence + punct);
+//   }
+
+//   return { text: result.join(" "), count };
+// }
+
+// function injectLightHumanQuirks(
+//   text: string,
+//   strength: number,
+//   lang?: string
+// ): { text: string; count: number } {
+//   let out = text;
+//   let count = 0;
+
+//   if (strength <= 0.2) return { text, count };
+
+//   if (!lang || /^en|es|fr|de|pt|it|nl|ro|pl|tr$/i.test(lang)) {
+//     out = out.replace(
+//       /\b(definitely|certainly|clearly|absolutely)\b/gi,
+//       (m) => {
+//         if (Math.random() > strength * 0.35) return m;
+//         count++;
+//         const choices = [
+//           "pretty much",
+//           "in most cases",
+//           "generally",
+//           "often",
+//           "usually",
+//         ];
+//         return choices[Math.floor(Math.random() * choices.length)];
+//       }
+//     );
+//   }
+
+//   return { text: out, count };
+// }
+
+// function softenDefinitiveLanguage(
+//   text: string,
+//   strength: number
+// ): { text: string; count: number } {
+//   let out = text;
+//   let count = 0;
+
+//   out = out.replace(/\b(always|never)\b/gi, (m) => {
+//     if (Math.random() > strength * 0.3) return m;
+//     count++;
+//     return m.toLowerCase() === "always" ? "often" : "rarely";
+//   });
+
+//   return { text: out, count };
+// }
+
+// /* ────────────────────────────────────────────────────────────
+//  * Spacing / punctuation cleanup
+//  * ──────────────────────────────────────────────────────────── */
+
+// function normalizeWhitespaceSoft(text: string): string {
+//   return text.replace(/[ \t]{3,}/g, "  ");
+// }
+
+// function fixSpacingClean(text: string): string {
+//   let out = text;
+
+//   // Ensure space after punctuation when needed
+//   out = out.replace(/([.,!?;:])(?![\s\n\r\t"')\]}])/g, "$1 ");
+
+//   // Collapse 3+ spaces to max 2
+//   out = out.replace(/ {3,}/g, "  ");
+
+//   // Normalize long ellipsis
+//   out = out.replace(/\.{4,}/g, "...");
+
+//   // Remove spaces before punctuation
+//   out = out.replace(/\s+([.,!?;:])/g, "$1");
+
+//   return out;
+// }
+
+// function fixDanglingParens(text: string): string {
+//   let out = text;
+//   const openCount = (out.match(/\(/g) || []).length;
+//   const closeCount = (out.match(/\)/g) || []).length;
+
+//   if (closeCount > openCount) {
+//     let diff = closeCount - openCount;
+//     out = out
+//       .split("")
+//       .reverse()
+//       .map((ch) => {
+//         if (ch === ")" && diff > 0) {
+//           diff--;
+//           return "";
+//         }
+//         return ch;
+//       })
+//       .reverse()
+//       .join("");
+//   } else if (openCount > closeCount) {
+//     out += ")".repeat(openCount - closeCount);
+//   }
+
+//   return out;
+// }
+
+// /* ────────────────────────────────────────────────────────────
+//  * Diff / scoring helpers
+//  * ──────────────────────────────────────────────────────────── */
+
+// function estimatePatternScore(original: string, changed: string): number {
+//   if (!original || !changed) return 1;
+//   if (original === changed) return 1;
+
+//   const o = original.replace(/\s+/g, " ").trim();
+//   const c = changed.replace(/\s+/g, " ").trim();
+//   if (!o || !c) return 1;
+
+//   const minLen = Math.min(o.length, c.length);
+//   if (minLen === 0) return 1;
+
+//   let same = 0;
+//   for (let i = 0; i < minLen; i++) {
+//     if (o.charAt(i) === c.charAt(i)) same++;
+//   }
+
+//   const similarity = same / minLen;
+//   const lengthDiff =
+//     Math.abs(o.split(" ").length - c.split(" ").length) /
+//     Math.max(o.split(" ").length, 1);
+
+//   const penalty = lengthDiff * 0.15;
+//   return clamp(similarity - penalty, 0, 1);
+// }
+
+// /** 0..1, higher = more different */
+// function estimateDiffScore(original: string, changed: string): number {
+//   if (!original || !changed) return 0;
+//   if (original === changed) return 0;
+
+//   const o = original.replace(/\s+/g, " ").trim();
+//   const c = changed.replace(/\s+/g, " ").trim();
+//   if (!o || !c) return 0;
+
+//   const minLen = Math.min(o.length, c.length);
+//   let diff = Math.abs(o.length - c.length);
+
+//   for (let i = 0; i < minLen; i++) {
+//     if (o[i] !== c[i]) diff++;
+//   }
+
+//   return clamp(diff / Math.max(o.length, 1), 0, 1);
+// }
+
+// function enforceMaxChangeRatio(
+//   original: string,
+//   changed: string,
+//   maxRatio: number
+// ): string {
+//   if (maxRatio <= 0) return changed;
+
+//   const o = original;
+//   const c = changed;
+//   const oLen = o.length;
+//   const cLen = c.length;
+//   const minLen = Math.min(oLen, cLen);
+//   if (!oLen || !cLen) return changed;
+
+//   let diff = Math.abs(oLen - cLen);
+//   for (let i = 0; i < minLen; i++) {
+//     if (o[i] !== c[i]) diff++;
+//   }
+
+//   const ratio = diff / oLen;
+//   if (ratio <= maxRatio) return changed;
+
+//   const keepHead = Math.floor(oLen * 0.55);
+//   const tail = c.slice(-Math.max(0, cLen - keepHead));
+
+//   return [o.slice(0, keepHead), tail].filter(Boolean).join(" ").trim();
+// }
+
+// /* ────────────────────────────────────────────────────────────
+//  * Language / script detection helpers
+//  * ──────────────────────────────────────────────────────────── */
+
+// function clamp(n: number, min: number, max: number): number {
+//   return Math.max(min, Math.min(max, n));
+// }
+
+// function isMostlyLatinScript(text: string): boolean {
+//   const sample = text.slice(0, 800);
+//   let latin = 0;
+//   let nonLatin = 0;
+
+//   for (let i = 0; i < sample.length; i++) {
+//     const code = sample.charCodeAt(i);
+//     if (
+//       (code >= 0x0041 && code <= 0x005a) ||
+//       (code >= 0x0061 && code <= 0x007a)
+//     ) {
+//       latin++;
+//     } else if (code > 127 && code !== 160) {
+//       nonLatin++;
+//     }
+//   }
+
+//   if (latin === 0 && nonLatin === 0) return true;
+//   return latin >= nonLatin;
+// }
+
+// function detectLanguageFromContent(text: string): string | undefined {
+//   const sample = text.slice(0, 800);
+
+//   if (/[اأإءؤئ]/.test(sample)) return "ar";
+//   if (/[\u0900-\u097F]/.test(sample)) return "hi";
+//   if (/[\u4e00-\u9fff]/.test(sample)) return "zh";
+//   if (/[\u0400-\u04FF]/.test(sample)) return "ru";
+//   if (/[\u3040-\u30ff]/.test(sample)) return "ja";
+//   if (/[\uAC00-\uD7AF]/.test(sample)) return "ko";
+//   if (isMostlyLatinScript(sample)) return "en";
+
+//   return undefined;
+// }
+
+// function preserveCase(from: string, to: string): string {
+//   if (!from) return to;
+//   if (from[0] === from[0].toUpperCase()) {
+//     return to.charAt(0).toUpperCase() + to.slice(1);
+//   }
+//   return to;
+// }

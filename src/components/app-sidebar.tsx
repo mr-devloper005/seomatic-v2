@@ -35,6 +35,11 @@ const data = {
       url: "/content",
       icon: IconFileText,
     },
+       {
+      title: "Auto posting",
+      url: "/posting",
+      icon: IconFileText,
+    },
   ],
   navSecondary: [
     {

@@ -6628,6 +6628,1041 @@
 
 
 
+// /* ===== Types (match your page) ===== */
+// export type GeneratedItem = {
+//   id: string;
+//   keyword?: string | string[];
+//   title?: string;
+//   html?: string;
+//   generatedContent?: string;
+//   images?: string[];
+//   fileId?: string;
+//   fileName?: string;
+//   createdAt?: number | string;
+// };
+// export type Address = { country: string; state: string; city: string; zip: string; line1: string };
+// export type Socials = { facebook?: string; twitter?: string; linkedin?: string; pinterest?: string; instagram?: string; yelp?: string; gmb?: string };
+// export type AutomationListing = { id: string; title: string; contentHtml: string; images: string[]; keywords: string[]; tags?: string[]; category?: string };
+// export type AutomationTargetSite = { site: string; login: { username: string; password: string }; type?: string; listings: AutomationListing[] };
+// export type AutomationPayload = { profile: { phone?: string; website?: string; email?: string; socials?: Socials; address?: Address }; targets: AutomationTargetSite[] };
+// export type UseListingAutomationOptions = {
+//   uploadImage?: (file: File) => Promise<string>;
+//   statusPollIntervalMs?: number;
+//   maxPollMinutes?: number;
+//   maxSelectableItems?: number;
+//   onMaxExceeded?: (max: number) => void;
+//   debug?: boolean;
+//   /** Optional callback to receive live run updates */
+//   onRunUpdate?: (run: JobRun) => void;
+// };
+// export type StartParams = {
+//   sites: { site: string; username: string; password: string; type?: string }[];
+//   defaults: { category?: string; keywordsDefaults?: string[]; imageUrl?: string; imageFile?: File | null; profile: { phone?: string; website?: string; email?: string; socials?: Socials; address?: Address } };
+//   dryRun?: boolean;
+// };
+// export type Project = { id: string; name: string; items: GeneratedItem[] };
+// /* Job run shape (client-side managed) */
+// export type JobRun = {
+//   jobId: string | null;
+//   status: "queued" | "running" | "done" | "error" | "idle";
+//   progress: number;
+//   startedAt?: number;
+//   finishedAt?: number | null;
+//   backlinks?: string[]; // accumulated as they arrive
+//   successCount?: number;
+//   failCount?: number;
+//   logs?: string[];
+//   error?: string | null;
+// };
+
+// /* Small local helpers (reused) */
+// function getItemTitle(it: GeneratedItem) { return it.title ?? ""; }
+// function getItemHtml(it: GeneratedItem) { return (it.html ?? it.generatedContent ?? "").toString(); }
+// function getItemKeywords(it: GeneratedItem): string[] { if (Array.isArray(it.keyword)) return it.keyword.map(String).filter(Boolean); if (typeof it.keyword === "string") return it.keyword.split(/[,\|]/).map(s => s.trim()).filter(Boolean); return []; }
+
+// /* ===== Image helpers (copied / compatible) ===== */
+// function isBlobOrDataUrl(u: string) { return /^blob:|^data:/i.test(u); }
+// function isHttpUrl(u: string) { return /^https?:\/\//i.test(u); }
+// function looksLikeDirectImage(u: string) { return /\.(png|jpg|jpeg|webp)(\?.*)?$/i.test(u); }
+// function assertValidImageUrl(u: string, ctx: string) {
+//   if (!u) throw new Error(`Missing image URL (${ctx}).`);
+//   if (isBlobOrDataUrl(u)) throw new Error(`Invalid image URL (${ctx}): ${u} — blob/data URLs are not supported. Upload first.`);
+//   if (isHttpUrl(u) && !looksLikeDirectImage(u)) throw new Error(`Image URL is not a direct file (${ctx}): ${u}`);
+//   if (!isHttpUrl(u) && !looksLikeDirectImage(u)) throw new Error(`Invalid image URL (${ctx}): ${u}`);
+// }
+
+// /* ===== WP API Helpers (New - Direct Calls) ===== */
+// async function getOrCreateTerm(termsUrl: string, taxonomy: 'category' | 'post_tag', name: string, authHeader: string): Promise<number> {
+//   const searchUrl = `${termsUrl}?search=${encodeURIComponent(name)}&per_page=1`;
+//   let res = await fetch(searchUrl, { headers: { Authorization: authHeader } });
+//   if (!res.ok) throw new Error(`Failed to search terms: ${res.status}`);
+//   let terms = await res.json();
+//   if (terms.length > 0) return terms[0].id;
+
+//   // Create
+//   res = await fetch(termsUrl, {
+//     method: 'POST',
+//     headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+//     body: JSON.stringify({ name, taxonomy }),
+//   });
+//   if (!res.ok) throw new Error(`Failed to create term: ${res.status}`);
+//   const term = await res.json();
+//   return term.id;
+// }
+
+// async function uploadMedia(mediaUrl: string, imageUrl: string, authHeader: string): Promise<number> {
+//   let blob: Blob;
+//   if (isHttpUrl(imageUrl)) {
+//     const imgRes = await fetch(imageUrl);
+//     if (!imgRes.ok) throw new Error(`Failed to fetch image: ${imgRes.status}`);
+//     blob = await imgRes.blob();
+//   } else {
+//     throw new Error(`Unsupported image URL: ${imageUrl}`);
+//   }
+
+//   const fd = new FormData();
+//   fd.append('file', blob, `featured-${Date.now()}.jpg`);
+
+//   const res = await fetch(mediaUrl, {
+//     method: 'POST',
+//     headers: { Authorization: authHeader },
+//     body: fd,
+//   });
+//   if (!res.ok) throw new Error(`Media upload failed: ${res.status}`);
+//   const media = await res.json();
+//   return media.id;
+// }
+
+// async function createPostOnSite(site: string, login: { username: string; password: string }, listing: AutomationListing): Promise<string> {
+//   const apiUrl = `https://${site}/wp-json/wp/v2/posts`;
+//   const mediaUrl = apiUrl.replace('/posts', '/media');
+//   const tagsUrl = apiUrl.replace('/posts', '/tags');
+//   const categoriesUrl = apiUrl.replace('/posts', '/categories');
+//   const auth = btoa(`${login.username}:${login.password}`);
+//   const authHeader = `Basic ${auth}`;
+//   const headers = { Authorization: authHeader, 'Content-Type': 'application/json' };
+
+//   // Resolve tag IDs
+//   const tagIds = await Promise.all(
+//     (listing.keywords || []).map(kw => getOrCreateTerm(tagsUrl, 'post_tag', kw, authHeader))
+//   );
+
+//   // Resolve category ID if provided
+//   let categoryIds: number[] = [];
+//   if (listing.category && listing.category.trim()) {
+//     try {
+//       const cid = await getOrCreateTerm(categoriesUrl, 'category', listing.category.trim(), authHeader);
+//       if (cid) categoryIds = [cid];
+//     } catch (e: any) {
+//       // Non-fatal: warn and continue without category (but we expect category to be provided upstream)
+//       console.warn(`Category resolution failed for ${site}: ${e?.message || e}`);
+//     }
+//   }
+
+//   // === JUSTIFY CONTENT ===
+//   const justifiedContent = `<div style="text-align: justify;">${listing.contentHtml}</div>`;
+
+//   // Create post
+//   const postData: any = {
+//     title: listing.title,
+//     content: justifiedContent,
+//     status: 'publish',
+//     tags: tagIds,
+//   };
+//   if (categoryIds.length) postData.categories = categoryIds;
+
+//   let res = await fetch(apiUrl, { method: 'POST', headers, body: JSON.stringify(postData) });
+//   if (!res.ok) throw new Error(`Post creation failed: ${res.status}`);
+//   let post = await res.json();
+
+//   // Upload and set featured image if available (non-fatal)
+//   if (listing.images && listing.images.length > 0) {
+//     const imgUrl = listing.images[0];
+//     try {
+//       assertValidImageUrl(imgUrl, `featured for ${site}`);
+//       const mediaId = await uploadMedia(mediaUrl, imgUrl, authHeader);
+//       res = await fetch(`${apiUrl}/${post.id}`, {
+//         method: 'POST',
+//         headers,
+//         body: JSON.stringify({ featured_media: mediaId }),
+//       });
+//       if (!res.ok) {
+//         console.warn(`Featured image update failed for ${site}: ${res.status}`);
+//       } else {
+//         post = await res.json();
+//       }
+//     } catch (e: any) {
+//       console.warn(`Featured image for ${site} skipped due to: ${e?.message || e}`);
+//     }
+//   }
+
+//   return post.link;
+// }
+
+// /* ===== Image upload helpers (for defaults) ===== */
+// async function autoUploadImage(file: File, uploadImage?: (file: File) => Promise<string>): Promise<string> {
+//   if (uploadImage) {
+//     const u = await uploadImage(file);
+//     if (u && !isBlobOrDataUrl(u)) { assertValidImageUrl(u, "uploadImage()"); return u; }
+//   }
+//   throw new Error("Image upload not implemented. Provide uploadImage callback.");
+// }
+
+// function extFromMime(mime: string) { if (/png/i.test(mime)) return "png"; if (/webp/i.test(mime)) return "webp"; if (/gif/i.test(mime)) return "gif"; return "jpg"; }
+// async function ensurePublicImageUrl(u: string, ctx: string, uploadImage?: (file: File) => Promise<string>): Promise<string> {
+//   if (!u) throw new Error(`Missing image URL (${ctx}).`);
+//   if (isHttpUrl(u)) { assertValidImageUrl(u, ctx); return u; }
+//   if (!isBlobOrDataUrl(u) && looksLikeDirectImage(u)) { assertValidImageUrl(u, ctx); return u; }
+//   if (isBlobOrDataUrl(u)) {
+//     let blob: Blob; try { const r = await fetch(u); blob = await r.blob(); } catch (e: any) { throw new Error(`Cannot read local image (${ctx}). Please re-select image. ${e?.message || e}`); }
+//     const mime = blob.type || "image/jpeg"; const ext = extFromMime(mime); const file = new File([blob], `upload_${Date.now()}.${ext}`, { type: mime }); const publicUrl = await autoUploadImage(file, uploadImage); assertValidImageUrl(publicUrl, ctx); return publicUrl;
+//   }
+//   assertValidImageUrl(u, ctx);
+//   return u;
+// }
+
+// /* ===== Build listings & payload (category mandatory, image optional) ===== */
+// async function resolveDefaultImageUrl(imageUrl?: string, imageFile?: File | null, uploadImage?: (file: File) => Promise<string>) {
+//   if (imageUrl?.trim()) return await ensurePublicImageUrl(imageUrl.trim(), "defaultImageUrl", uploadImage);
+//   if (imageFile) { const u = await autoUploadImage(imageFile, uploadImage); assertValidImageUrl(u, "uploadedDefaultImageUrl"); return u; }
+//   return "";
+// }
+// async function buildListingsForSelected(selectedItems: GeneratedItem[], params: { keywordsDefaults?: string[]; defaultImageUrl?: string; defaultCategory?: string }, uploadImage?: (file: File) => Promise<string>): Promise<AutomationListing[]> {
+//   const { keywordsDefaults = [], defaultImageUrl = "", defaultCategory = "" } = params;
+//   const listings: AutomationListing[] = [];
+//   for (const it of selectedItems) {
+//     const ownKeywords = getItemKeywords(it);
+//     const mergedKeywords = Array.from(new Set([...ownKeywords, ...keywordsDefaults])).filter(Boolean);
+//     const rawImgs = (it.images || []).filter(Boolean) as string[];
+//     const publicImgs: string[] = [];
+//     for (let i = 0; i < rawImgs.length; i++) {
+//       const img = rawImgs[i];
+//       // ensurePublicImageUrl may throw for invalid image urls — keep that behavior for invalid urls
+//       const pub = await ensurePublicImageUrl(img, `item(${it.id}).images[${i}]`, uploadImage);
+//       publicImgs.push(pub);
+//     }
+//     const images = publicImgs.length > 0 ? publicImgs : (defaultImageUrl ? [defaultImageUrl] : []);
+//     listings.push({
+//       id: it.id,
+//       title: getItemTitle(it),
+//       contentHtml: getItemHtml(it),
+//       images,
+//       keywords: mergedKeywords,
+//       tags: mergedKeywords,
+//       category: defaultCategory || undefined
+//     });
+//   }
+//   const bad = listings.filter(l => !l.title || !l.contentHtml);
+//   if (bad.length) throw new Error(`Some items missing title/content: ${bad.map(b => b.id).join(", ")}`);
+
+//   // Images are optional — do not throw when images are missing.
+//   return listings;
+// }
+// async function buildPayload(params: StartParams, selectedItems: GeneratedItem[], uploadImage?: (file: File) => Promise<string>): Promise<AutomationPayload> {
+//   const { sites, defaults: { keywordsDefaults, imageUrl, imageFile, profile, category } } = params;
+  
+//   if (!Array.isArray(sites) || sites.length === 0) throw new Error("No sites selected.");
+//   if (sites.some((s) => !s.site || !s.username || !s.password)) throw new Error("Every selected site must have site + username + password.");
+//   if (selectedItems.length === 0) throw new Error("No items selected.");
+//   if (sites.length !== selectedItems.length) throw new Error(`Sites (${sites.length}) and items (${selectedItems.length}) must be equal.`);
+
+//   const defaultCategory = (category ?? "").toString().trim();
+//   if (!defaultCategory) throw new Error("Category is required. Please choose a category before publishing.");
+
+//   const defaultImageUrl = await resolveDefaultImageUrl(imageUrl, imageFile, uploadImage);
+
+//   const listings = await buildListingsForSelected(selectedItems, { keywordsDefaults, defaultImageUrl, defaultCategory }, uploadImage);
+  
+//   const targets: AutomationTargetSite[] = sites.map((s, idx) => ({ site: s.site, login: { username: s.username, password: s.password }, type: (s as any).type ?? "wordpress", listings: [listings[idx]] }));
+//   const payload: AutomationPayload = { profile, targets };
+//   return payload;
+// }
+
+// /* ===== Hook implementation (Updated - Optimized & Fault Tolerant) ===== */
+// import { useState, useMemo, useEffect, useRef } from 'react';
+// import * as XLSX from 'xlsx';  // Assume installed: npm i xlsx
+
+// export function useListingAutomation(allItems: GeneratedItem[], opts: UseListingAutomationOptions = {}) {
+//   const {
+//     uploadImage,
+//     maxSelectableItems = Infinity,
+//     onMaxExceeded,
+//     debug = false,
+//     onRunUpdate,
+//   } = opts;
+
+//   /* Group by project */
+//   const projects: Project[] = useMemo(() => {
+//     const map = new Map<string, GeneratedItem[]>();
+//     for (const it of allItems) {
+//       const key = it.fileId ?? "__misc__";
+//       if (!map.has(key)) map.set(key, []);
+//       map.get(key)!.push(it);
+//     }
+//     return Array.from(map.entries()).map(([pid, arr]) => ({ id: pid, name: arr[0]?.fileName || pid || "Untitled Project", items: arr }));
+//   }, [allItems]);
+
+//   /* Search */
+//   const [search, setSearch] = useState("");
+//   const filteredProjects: Project[] = useMemo(() => {
+//     const q = search.toLowerCase().trim();
+//     if (!q) return projects;
+//     return projects.map(p => ({ ...p, items: p.items.filter(it => `${getItemTitle(it)} ${getItemKeywords(it).join(" ")}`.toLowerCase().includes(q)) })).filter(p => p.items.length > 0);
+//   }, [projects, search]);
+
+//   /* Selection / expansion (unchanged) */
+//   const [expandedProjectIds, setExpandedProjectIds] = useState<Set<string>>(new Set());
+//   const toggleProjectExpand = (pid: string) => { setExpandedProjectIds(prev => { const n = new Set(prev); n.has(pid) ? n.delete(pid) : n.add(pid); return n; }); };
+//   const [selectedProjectIds, setSelectedProjectIds] = useState<Set<string>>(new Set());
+//   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
+//   const isProjectSelected = (pid: string) => selectedProjectIds.has(pid);
+//   const isItemSelected = (iid: string) => selectedItemIds.has(iid);
+//   const setProjectChecked = (pid: string, checked: boolean) => {
+//     const proj = projects.find(p => p.id === pid); if (!proj) return;
+//     if (!checked) {
+//       setSelectedProjectIds(prev => { const n = new Set(prev); n.delete(pid); return n; });
+//       setSelectedItemIds(prev => { const n = new Set(prev); for (const it of proj.items) n.delete(it.id); return n; });
+//       return;
+//     }
+//     setSelectedItemIds(prev => {
+//       const n = new Set(prev); let added = 0;
+//       for (const it of proj.items) { if (n.size >= maxSelectableItems) break; if (!n.has(it.id)) { n.add(it.id); added++; } }
+//       if (added === 0 && proj.items.length) onMaxExceeded?.(maxSelectableItems);
+//       return n;
+//     });
+//     setSelectedProjectIds(prev => { const n = new Set(prev); const after = new Set(selectedItemIds); for (const it of proj.items) { if (after.size >= maxSelectableItems) break; after.add(it.id); } const allSelectedNow = proj.items.every(it => after.has(it.id)); if (allSelectedNow) n.add(pid); return n; });
+//   };
+//   const setItemChecked = (pid: string, iid: string, checked: boolean) => {
+//     const proj = projects.find(p => p.id === pid);
+//     setSelectedItemIds(prev => { const n = new Set(prev); if (checked) { if (n.size >= maxSelectableItems && !n.has(iid)) { onMaxExceeded?.(maxSelectableItems); return prev; } n.add(iid); } else { n.delete(iid); } return n; });
+//     if (proj) {
+//       const after = new Set(selectedItemIds);
+//       checked ? after.add(iid) : after.delete(iid);
+//       const allSelected = proj.items.every(it => after.has(it.id));
+//       const noneSelected = proj.items.every(it => !after.has(it.id));
+//       setSelectedProjectIds(prev => { const n = new Set(prev); if (allSelected) n.add(pid); else if (noneSelected) n.delete(pid); return n; });
+//     }
+//   };
+//   const clearSelection = () => { setSelectedProjectIds(new Set()); setSelectedItemIds(new Set()); };
+//   const selectAllVisible = () => {
+//     const all = new Set<string>(); for (const p of filteredProjects) { for (const it of p.items) { if (all.size >= maxSelectableItems) break; all.add(it.id); } if (all.size >= maxSelectableItems) break; }
+//     setSelectedItemIds(all);
+//     const projIds = new Set<string>(); for (const p of filteredProjects) { const allInProj = p.items.every(it => all.has(it.id)); if (allInProj) projIds.add(p.id); }
+//     setSelectedProjectIds(projIds);
+//     if (filteredProjects.flatMap(p => p.items).length > maxSelectableItems) onMaxExceeded?.(maxSelectableItems);
+//   };
+
+//   /* Focused preview */
+//   const [focusedItemId, setFocusedItemId] = useState<string>("");
+//   const focusedItem = useMemo(() => allItems.find(x => x.id === focusedItemId), [allItems, focusedItemId]);
+//   const selectedItems = useMemo(() => allItems.filter(it => selectedItemIds.has(it.id)), [allItems, selectedItemIds]);
+
+//   /* ===== Job runs state (client-side) ===== */
+//   const [isStarting, setIsStarting] = useState(false);
+//   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+//   const [progress, setProgress] = useState(0);
+//   const [status, setStatus] = useState<"idle" | "running" | "done" | "error">("idle");
+//   const [runs, setRuns] = useState<JobRun[]>([]);
+//   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+//   function cancelPolling() { if (pollTimer.current) { clearInterval(pollTimer.current); pollTimer.current = null; } }
+//   function upsertRun(run: JobRun) {
+//     setRuns(prev => {
+//       const idx = prev.findIndex(r => r.jobId === run.jobId);
+//       if (idx === -1) return [run, ...prev];
+//       const copy = [...prev]; copy[idx] = { ...copy[idx], ...run }; copy.sort((a,b) => (b.startedAt||0) - (a.startedAt||0)); return copy;
+//     });
+//     onRunUpdate?.(run);
+//   }
+
+//   /* ===== Start (Optimized + Concurrency + Fault Tolerant) ===== */
+//   async function start(params: StartParams): Promise<{ jobId: string | null; listings: number; payload: AutomationPayload }> {
+//     setIsStarting(true);
+//     setStatus("idle");
+//     setProgress(0);
+//     setCurrentJobId(null);
+//     cancelPolling();
+//     try {
+//       const selectedItemsLocal = selectedItems;  // Use memoized
+//       const payload = await buildPayload(params, selectedItemsLocal, uploadImage);
+//       const listingsCount = payload.targets.length;
+//       if (debug) console.log("Starting direct WP automation with payload:", payload);
+//       if (params.dryRun) return { jobId: null, listings: listingsCount, payload };
+
+//       const jobId = Date.now().toString();
+//       const now = Date.now();
+//       const optimisticRun: JobRun = { jobId, status: "running", progress: 0, startedAt: now, backlinks: [], successCount: 0, failCount: 0, logs: [] };
+//       upsertRun(optimisticRun);
+//       setCurrentJobId(jobId);
+//       setStatus("running");
+
+//       const total = payload.targets.length;
+//       let successCount = 0;
+//       let failCount = 0;
+//       let completedCount = 0;
+//       const newBacklinks: string[] = [];
+//       const newLogs: string[] = [];
+
+//       // CONFIGURATION: Number of simultaneous requests
+//       const CONCURRENCY_LIMIT = 5; 
+
+//       // WORKER FUNCTION: Processes one target safely
+//       const processTarget = async (target: AutomationTargetSite) => {
+//         try {
+//           const postUrl = await createPostOnSite(target.site, target.login, target.listings[0]);
+//           newBacklinks.push(postUrl);
+//           newLogs.push(`Success on ${target.site}: ${postUrl}`);
+//           successCount++;
+//         } catch (e: any) {
+//           newLogs.push(`Failed on ${target.site}: ${e?.message ?? e}`);
+//           failCount++;
+//         } finally {
+//           completedCount++;
+//           const prog = Math.round((completedCount / total) * 100);
+//           setProgress(prog);
+//           upsertRun({ 
+//             ...optimisticRun, 
+//             progress: prog, 
+//             logs: [...newLogs], 
+//             successCount, 
+//             failCount, 
+//             backlinks: [...newBacklinks] 
+//           });
+//         }
+//       };
+
+//       // CONCURRENCY QUEUE EXECUTION
+//       let index = 0;
+//       const targets = payload.targets;
+      
+//       const next = async (): Promise<void> => {
+//         while (index < total) {
+//           const currTarget = targets[index++];
+//           if(!currTarget) break;
+//           await processTarget(currTarget);
+//         }
+//       };
+
+//       const workers = [];
+//       for(let i = 0; i < Math.min(CONCURRENCY_LIMIT, total); i++) {
+//         workers.push(next());
+//       }
+      
+//       await Promise.all(workers);
+
+//       const finalStatus: "done" | "error" = failCount === 0 ? "done" : (failCount < total ? "done" : "error");
+//       const finalRun = { ...optimisticRun, status: finalStatus, finishedAt: Date.now(), progress: 100, logs: newLogs, successCount, failCount, backlinks: newBacklinks };
+//       upsertRun(finalRun);
+//       setStatus(finalStatus);
+//       setProgress(100);
+
+//       return { jobId, listings: listingsCount, payload };
+//     } catch (err: any) {
+//         console.error("Critical Failure in start:", err);
+//         setStatus("error");
+//         throw err;
+//     } finally {
+//       setIsStarting(false);
+//     }
+//   }
+
+//   useEffect(() => cancelPolling, []);
+
+//   /* Helper: fetch a saved run by id (noop now) */
+//   async function fetchRunDetails() { return null; }
+
+//   /* Helper: download export (client-side XLSX) */
+//   async function downloadRunExcel(jobId: string | null, filename = "automation_run.xlsx") {
+//     if (!jobId) throw new Error("Missing jobId");
+//     const run = runs.find(r => r.jobId === jobId);
+//     if (!run?.backlinks?.length) throw new Error("No backlinks to export");
+
+//     const wsData = [['SiteName', 'Post URL']];
+//     run.backlinks.forEach(link => {
+//       const hostname = new URL(link).hostname.replace('www.', '');
+//       wsData.push([hostname, link]);
+//     });
+
+//     const wb = XLSX.utils.book_new();
+//     const ws = XLSX.utils.aoa_to_sheet(wsData);
+//     XLSX.utils.book_append_sheet(wb, ws, 'Backlinks');
+//     XLSX.writeFile(wb, filename);
+//     return true;
+//   }
+
+//   /* Exposed API */
+//   return {
+//     search,
+//     setSearch,
+//     projects,
+//     filteredProjects,
+//     expandedProjectIds,
+//     toggleProjectExpand,
+//     selectedProjectIds,
+//     selectedItemIds,
+//     isProjectSelected,
+//     isItemSelected,
+//     setProjectChecked,
+//     setItemChecked,
+//     selectAllVisible,
+//     clearSelection,
+//     focusedItemId,
+//     setFocusedItemId,
+//     focusedItem,
+//     selectedItems,
+//     start,
+//     cancelPolling,
+//     isStarting,
+//     jobId: currentJobId,
+//     progress,
+//     status,
+//     runs,
+//     fetchRunDetails,
+//     downloadRunExcel,
+//   };
+// } 
+
+
+
+// /* ===== Types (match your page) ===== */
+// export type GeneratedItem = {
+//   id: string;
+//   keyword?: string | string[];
+//   title?: string;
+//   html?: string;
+//   generatedContent?: string;
+//   images?: string[];
+//   fileId?: string;
+//   fileName?: string;
+//   createdAt?: number | string;
+// };
+// export type Address = { country: string; state: string; city: string; zip: string; line1: string };
+// export type Socials = { facebook?: string; twitter?: string; linkedin?: string; pinterest?: string; instagram?: string; yelp?: string; gmb?: string };
+// export type AutomationListing = { id: string; title: string; contentHtml: string; images: string[]; keywords: string[]; tags?: string[]; category?: string };
+// export type AutomationTargetSite = { site: string; login: { username: string; password: string }; type?: string; listings: AutomationListing[] };
+// export type AutomationPayload = { profile: { phone?: string; website?: string; email?: string; socials?: Socials; address?: Address }; targets: AutomationTargetSite[] };
+// export type UseListingAutomationOptions = {
+//   uploadImage?: (file: File) => Promise<string>;
+//   statusPollIntervalMs?: number;
+//   maxPollMinutes?: number;
+//   maxSelectableItems?: number;
+//   onMaxExceeded?: (max: number) => void;
+//   debug?: boolean;
+//   /** Optional callback to receive live run updates */
+//   onRunUpdate?: (run: JobRun) => void;
+// };
+// export type StartParams = {
+//   sites: { site: string; username: string; password: string; type?: string }[];
+//   defaults: { category?: string; keywordsDefaults?: string[]; imageUrl?: string; imageFile?: File | null; imagePoolUrls?: string[]; profile: { phone?: string; website?: string; email?: string; socials?: Socials; address?: Address } };
+//   dryRun?: boolean;
+// };
+// export type Project = { id: string; name: string; items: GeneratedItem[] };
+// /* Job run shape (client-side managed) */
+// export type JobRun = {
+//   jobId: string | null;
+//   status: "queued" | "running" | "done" | "error" | "idle";
+//   progress: number;
+//   startedAt?: number;
+//   finishedAt?: number | null;
+//   backlinks?: string[]; // accumulated as they arrive
+//   successCount?: number;
+//   failCount?: number;
+//   logs?: string[];
+//   error?: string | null;
+// };
+
+// /* Small local helpers (reused) */
+// function getItemTitle(it: GeneratedItem) { return it.title ?? ""; }
+// function getItemHtml(it: GeneratedItem) { return (it.html ?? it.generatedContent ?? "").toString(); }
+// function getItemKeywords(it: GeneratedItem): string[] { if (Array.isArray(it.keyword)) return it.keyword.map(String).filter(Boolean); if (typeof it.keyword === "string") return it.keyword.split(/[,\|]/).map(s => s.trim()).filter(Boolean); return []; }
+
+// /* ===== Image helpers (copied / compatible) ===== */
+// function isBlobOrDataUrl(u: string) { return /^blob:|^data:/i.test(u); }
+// function isHttpUrl(u: string) { return /^https?:\/\//i.test(u); }
+// function looksLikeDirectImage(u: string) { return /\.(png|jpg|jpeg|webp|gif)(\?.*)?$/i.test(u); }
+// function assertValidImageUrl(u: string, ctx: string) {
+//   if (!u) throw new Error(`Missing image URL (${ctx}).`);
+//   if (isBlobOrDataUrl(u)) throw new Error(`Invalid image URL (${ctx}): ${u} — blob/data URLs are not supported. Upload first.`);
+//   if (isHttpUrl(u) && !looksLikeDirectImage(u)) throw new Error(`Image URL is not a direct file (${ctx}): ${u}`);
+//   if (!isHttpUrl(u) && !looksLikeDirectImage(u)) throw new Error(`Invalid image URL (${ctx}): ${u}`);
+// }
+
+// /* ===== WP API Helpers (New - Direct Calls) ===== */
+// /* (unchanged functions for getOrCreateTerm, uploadMedia if used elsewhere) */
+// async function getOrCreateTerm(termsUrl: string, taxonomy: 'category' | 'post_tag', name: string, authHeader: string): Promise<number> {
+//   const searchUrl = `${termsUrl}?search=${encodeURIComponent(name)}&per_page=1`;
+//   let res = await fetch(searchUrl, { headers: { Authorization: authHeader } });
+//   if (!res.ok) throw new Error(`Failed to search terms: ${res.status}`);
+//   let terms = await res.json();
+//   if (terms.length > 0) return terms[0].id;
+
+//   // Create
+//   res = await fetch(termsUrl, {
+//     method: 'POST',
+//     headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+//     body: JSON.stringify({ name, taxonomy }),
+//   });
+//   if (!res.ok) throw new Error(`Failed to create term: ${res.status}`);
+//   const term = await res.json();
+//   return term.id;
+// }
+
+// async function uploadMedia(mediaUrl: string, imageUrl: string, authHeader: string): Promise<number> {
+//   let blob: Blob;
+//   if (isHttpUrl(imageUrl)) {
+//     const imgRes = await fetch(imageUrl);
+//     if (!imgRes.ok) throw new Error(`Failed to fetch image: ${imgRes.status}`);
+//     blob = await imgRes.blob();
+//   } else {
+//     throw new Error(`Unsupported image URL: ${imageUrl}`);
+//   }
+
+//   const fd = new FormData();
+//   fd.append('file', blob, `featured-${Date.now()}.jpg`);
+
+//   const res = await fetch(mediaUrl, {
+//     method: 'POST',
+//     headers: { Authorization: authHeader },
+//     body: fd,
+//   });
+//   if (!res.ok) throw new Error(`Media upload failed: ${res.status}`);
+//   const media = await res.json();
+//   return media.id;
+// }
+
+// /* createPostOnSite unchanged (keeps existing direct WP logic) */
+// async function createPostOnSite(site: string, login: { username: string; password: string }, listing: AutomationListing): Promise<string> {
+//   const apiUrl = `https://${site}/wp-json/wp/v2/posts`;
+//   const mediaUrl = apiUrl.replace('/posts', '/media');
+//   const tagsUrl = apiUrl.replace('/posts', '/tags');
+//   const categoriesUrl = apiUrl.replace('/posts', '/categories');
+//   const auth = btoa(`${login.username}:${login.password}`);
+//   const authHeader = `Basic ${auth}`;
+//   const headers = { Authorization: authHeader, 'Content-Type': 'application/json' };
+
+//   // Resolve tag IDs
+//   const tagIds = await Promise.all(
+//     (listing.keywords || []).map(kw => getOrCreateTerm(tagsUrl, 'post_tag', kw, authHeader))
+//   );
+
+//   // Resolve category ID if provided
+//   let categoryIds: number[] = [];
+//   if (listing.category && listing.category.trim()) {
+//     try {
+//       const cid = await getOrCreateTerm(categoriesUrl, 'category', listing.category.trim(), authHeader);
+//       if (cid) categoryIds = [cid];
+//     } catch (e: any) {
+//       // Non-fatal: warn and continue without category (but we expect category to be provided upstream)
+//       console.warn(`Category resolution failed for ${site}: ${e?.message || e}`);
+//     }
+//   }
+
+//   // === JUSTIFY CONTENT ===
+//   const justifiedContent = `<div style="text-align: justify;">${listing.contentHtml}</div>`;
+
+//   // Create post
+//   const postData: any = {
+//     title: listing.title,
+//     content: justifiedContent,
+//     status: 'publish',
+//     tags: tagIds,
+//   };
+//   if (categoryIds.length) postData.categories = categoryIds;
+
+//   let res = await fetch(apiUrl, { method: 'POST', headers, body: JSON.stringify(postData) });
+//   if (!res.ok) throw new Error(`Post creation failed: ${res.status}`);
+//   let post = await res.json();
+
+//   // Upload and set featured image if available (non-fatal)
+//   if (listing.images && listing.images.length > 0) {
+//     const imgUrl = listing.images[0];
+//     try {
+//       assertValidImageUrl(imgUrl, `featured for ${site}`);
+//       const mediaId = await uploadMedia(mediaUrl, imgUrl, authHeader);
+//       res = await fetch(`${apiUrl}/${post.id}`, {
+//         method: 'POST',
+//         headers,
+//         body: JSON.stringify({ featured_media: mediaId }),
+//       });
+//       if (!res.ok) {
+//         console.warn(`Featured image update failed for ${site}: ${res.status}`);
+//       } else {
+//         post = await res.json();
+//       }
+//     } catch (e: any) {
+//       console.warn(`Featured image for ${site} skipped due to: ${e?.message || e}`);
+//     }
+//   }
+
+//   return post.link;
+// }
+
+// /* ===== Image upload helpers (for defaults & pool) ===== */
+// async function autoUploadImage(file: File, uploadImage?: (file: File) => Promise<string>): Promise<string> {
+//   if (uploadImage) {
+//     const u = await uploadImage(file);
+//     if (u && !isBlobOrDataUrl(u)) { assertValidImageUrl(u, "uploadImage()"); return u; }
+//   }
+//   throw new Error("Image upload not implemented. Provide uploadImage callback.");
+// }
+
+// function extFromMime(mime: string) { if (/png/i.test(mime)) return "png"; if (/webp/i.test(mime)) return "webp"; if (/gif/i.test(mime)) return "gif"; return "jpg"; }
+// async function ensurePublicImageUrl(u: string, ctx: string, uploadImage?: (file: File) => Promise<string>): Promise<string> {
+//   if (!u) throw new Error(`Missing image URL (${ctx}).`);
+//   if (isHttpUrl(u)) { assertValidImageUrl(u, ctx); return u; }
+//   if (!isBlobOrDataUrl(u) && looksLikeDirectImage(u)) { assertValidImageUrl(u, ctx); return u; }
+//   if (isBlobOrDataUrl(u)) {
+//     let blob: Blob; try { const r = await fetch(u); blob = await r.blob(); } catch (e: any) { throw new Error(`Cannot read local image (${ctx}). Please re-select image. ${e?.message || e}`); }
+//     const mime = blob.type || "image/jpeg"; const ext = extFromMime(mime); const file = new File([blob], `upload_${Date.now()}.${ext}`, { type: mime }); const publicUrl = await autoUploadImage(file, uploadImage); assertValidImageUrl(publicUrl, ctx); return publicUrl;
+//   }
+//   assertValidImageUrl(u, ctx);
+//   return u;
+// }
+
+// /* ===== Build listings & payload (category mandatory, image optional, pool support) ===== */
+// async function resolveDefaultImageUrl(imageUrl?: string, imageFile?: File | null, uploadImage?: (file: File) => Promise<string>) {
+//   if (imageUrl?.trim()) return await ensurePublicImageUrl(imageUrl.trim(), "defaultImageUrl", uploadImage);
+//   if (imageFile) { const u = await autoUploadImage(imageFile, uploadImage); assertValidImageUrl(u, "uploadedDefaultImageUrl"); return u; }
+//   return "";
+// }
+
+// async function buildListingsForSelected(selectedItems: GeneratedItem[], params: { keywordsDefaults?: string[]; defaultImageUrl?: string; defaultCategory?: string; imagePoolUrls?: string[] }, uploadImage?: (file: File) => Promise<string>): Promise<AutomationListing[]> {
+//   const { keywordsDefaults = [], defaultImageUrl = "", defaultCategory = "", imagePoolUrls = [] } = params;
+//   const listings: AutomationListing[] = [];
+//   for (let idx = 0; idx < selectedItems.length; idx++) {
+//     const it = selectedItems[idx];
+//     const ownKeywords = getItemKeywords(it);
+//     const mergedKeywords = Array.from(new Set([...ownKeywords, ...keywordsDefaults])).filter(Boolean);
+//     const rawImgs = (it.images || []).filter(Boolean) as string[];
+//     const publicImgs: string[] = [];
+//     for (let i = 0; i < rawImgs.length; i++) {
+//       const img = rawImgs[i];
+//       // ensurePublicImageUrl may throw for invalid image urls — keep that behavior for invalid urls
+//       const pub = await ensurePublicImageUrl(img, `item(${it.id}).images[${i}]`, uploadImage);
+//       publicImgs.push(pub);
+//     }
+
+//     // Pick image: preference order - item images > imagePool selection > defaultImageUrl
+//     let chosenImages: string[] = [];
+//     if (publicImgs.length > 0) {
+//       chosenImages = publicImgs;
+//     } else if (Array.isArray(imagePoolUrls) && imagePoolUrls.length > 0) {
+//       // Random assignment (or can be deterministic by using idx)
+//       const pick = imagePoolUrls[Math.floor(Math.random() * imagePoolUrls.length)];
+//       chosenImages = [pick];
+//     } else if (defaultImageUrl) {
+//       chosenImages = [defaultImageUrl];
+//     } else {
+//       chosenImages = [];
+//     }
+
+//     listings.push({
+//       id: it.id,
+//       title: getItemTitle(it),
+//       contentHtml: getItemHtml(it),
+//       images: chosenImages,
+//       keywords: mergedKeywords,
+//       tags: mergedKeywords,
+//       category: defaultCategory || undefined
+//     });
+//   }
+//   const bad = listings.filter(l => !l.title || !l.contentHtml);
+//   if (bad.length) throw new Error(`Some items missing title/content: ${bad.map(b => b.id).join(", ")}`);
+
+//   // Images are optional — do not throw when images are missing.
+//   return listings;
+// }
+
+// async function buildPayload(params: StartParams, selectedItems: GeneratedItem[], uploadImage?: (file: File) => Promise<string>): Promise<AutomationPayload> {
+//   const { sites, defaults: { keywordsDefaults, imageUrl, imageFile, imagePoolUrls, profile, category } } = params;
+
+//   if (!Array.isArray(sites) || sites.length === 0) throw new Error("No sites selected.");
+//   if (sites.some((s) => !s.site || !s.username || !s.password)) throw new Error("Every selected site must have site + username + password.");
+//   if (selectedItems.length === 0) throw new Error("No items selected.");
+//   if (sites.length !== selectedItems.length) throw new Error(`Sites (${sites.length}) and items (${selectedItems.length}) must be equal.`);
+
+//   const defaultCategory = (category ?? "").toString().trim();
+//   if (!defaultCategory) throw new Error("Category is required. Please choose a category before publishing.");
+
+//   const defaultImageUrl = await resolveDefaultImageUrl(imageUrl, imageFile, uploadImage);
+
+//   // Ensure image pool urls are valid/public
+//   const poolUrls: string[] = [];
+//   if (Array.isArray(imagePoolUrls) && imagePoolUrls.length > 0) {
+//     for (let i = 0; i < imagePoolUrls.length; i++) {
+//       const u = imagePoolUrls[i];
+//       const pub = await ensurePublicImageUrl(u, `imagePool[${i}]`, uploadImage);
+//       poolUrls.push(pub);
+//     }
+//   }
+
+//   const listings = await buildListingsForSelected(selectedItems, { keywordsDefaults, defaultImageUrl, defaultCategory, imagePoolUrls: poolUrls }, uploadImage);
+
+//   const targets: AutomationTargetSite[] = sites.map((s, idx) => ({ site: s.site, login: { username: s.username, password: s.password }, type: (s as any).type ?? "wordpress", listings: [listings[idx]] }));
+//   const payload: AutomationPayload = { profile, targets };
+//   return payload;
+// }
+
+// /* ===== Hook implementation (Updated - Optimized & Fault Tolerant) ===== */
+// import { useState, useMemo, useEffect, useRef } from 'react';
+// import * as XLSX from 'xlsx';  // Assume installed: npm i xlsx
+
+// export function useListingAutomation(allItems: GeneratedItem[], opts: UseListingAutomationOptions = {}) {
+//   const {
+//     uploadImage,
+//     maxSelectableItems = Infinity,
+//     onMaxExceeded,
+//     debug = false,
+//     onRunUpdate,
+//   } = opts;
+
+//   /* Group by project */
+//   const projects: Project[] = useMemo(() => {
+//     const map = new Map<string, GeneratedItem[]>();
+//     for (const it of allItems) {
+//       const key = it.fileId ?? "__misc__";
+//       if (!map.has(key)) map.set(key, []);
+//       map.get(key)!.push(it);
+//     }
+//     return Array.from(map.entries()).map(([pid, arr]) => ({ id: pid, name: arr[0]?.fileName || pid || "Untitled Project", items: arr }));
+//   }, [allItems]);
+
+//   /* Search */
+//   const [search, setSearch] = useState("");
+//   const filteredProjects: Project[] = useMemo(() => {
+//     const q = search.toLowerCase().trim();
+//     if (!q) return projects;
+//     return projects.map(p => ({ ...p, items: p.items.filter(it => `${getItemTitle(it)} ${getItemKeywords(it).join(" ")}`.toLowerCase().includes(q)) })).filter(p => p.items.length > 0);
+//   }, [projects, search]);
+
+//   /* Selection / expansion (unchanged) */
+//   const [expandedProjectIds, setExpandedProjectIds] = useState<Set<string>>(new Set());
+//   const toggleProjectExpand = (pid: string) => { setExpandedProjectIds(prev => { const n = new Set(prev); n.has(pid) ? n.delete(pid) : n.add(pid); return n; }); };
+//   const [selectedProjectIds, setSelectedProjectIds] = useState<Set<string>>(new Set());
+//   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
+//   const isProjectSelected = (pid: string) => selectedProjectIds.has(pid);
+//   const isItemSelected = (iid: string) => selectedItemIds.has(iid);
+//   const setProjectChecked = (pid: string, checked: boolean) => {
+//     const proj = projects.find(p => p.id === pid); if (!proj) return;
+//     if (!checked) {
+//       setSelectedProjectIds(prev => { const n = new Set(prev); n.delete(pid); return n; });
+//       setSelectedItemIds(prev => { const n = new Set(prev); for (const it of proj.items) n.delete(it.id); return n; });
+//       return;
+//     }
+//     setSelectedItemIds(prev => {
+//       const n = new Set(prev); let added = 0;
+//       for (const it of proj.items) { if (n.size >= maxSelectableItems) break; if (!n.has(it.id)) { n.add(it.id); added++; } }
+//       if (added === 0 && proj.items.length) onMaxExceeded?.(maxSelectableItems);
+//       return n;
+//     });
+//     setSelectedProjectIds(prev => { const n = new Set(prev); const after = new Set(selectedItemIds); for (const it of proj.items) { if (after.size >= maxSelectableItems) break; after.add(it.id); } const allSelectedNow = proj.items.every(it => after.has(it.id)); if (allSelectedNow) n.add(pid); return n; });
+//   };
+//   const setItemChecked = (pid: string, iid: string, checked: boolean) => {
+//     const proj = projects.find(p => p.id === pid);
+//     setSelectedItemIds(prev => { const n = new Set(prev); if (checked) { if (n.size >= maxSelectableItems && !n.has(iid)) { onMaxExceeded?.(maxSelectableItems); return prev; } n.add(iid); } else { n.delete(iid); } return n; });
+//     if (proj) {
+//       const after = new Set(selectedItemIds);
+//       checked ? after.add(iid) : after.delete(iid);
+//       const allSelected = proj.items.every(it => after.has(it.id));
+//       const noneSelected = proj.items.every(it => !after.has(it.id));
+//       setSelectedProjectIds(prev => { const n = new Set(prev); if (allSelected) n.add(pid); else if (noneSelected) n.delete(pid); return n; });
+//     }
+//   };
+//   const clearSelection = () => { setSelectedProjectIds(new Set()); setSelectedItemIds(new Set()); };
+//   const selectAllVisible = () => {
+//     const all = new Set<string>(); for (const p of filteredProjects) { for (const it of p.items) { if (all.size >= maxSelectableItems) break; all.add(it.id); } if (all.size >= maxSelectableItems) break; }
+//     setSelectedItemIds(all);
+//     const projIds = new Set<string>(); for (const p of filteredProjects) { const allInProj = p.items.every(it => all.has(it.id)); if (allInProj) projIds.add(p.id); }
+//     setSelectedProjectIds(projIds);
+//     if (filteredProjects.flatMap(p => p.items).length > maxSelectableItems) onMaxExceeded?.(maxSelectableItems);
+//   };
+
+//   /* Focused preview */
+//   const [focusedItemId, setFocusedItemId] = useState<string>("");
+//   const focusedItem = useMemo(() => allItems.find(x => x.id === focusedItemId), [allItems, focusedItemId]);
+//   const selectedItems = useMemo(() => allItems.filter(it => selectedItemIds.has(it.id)), [allItems, selectedItemIds]);
+
+//   /* ===== Job runs state (client-side) ===== */
+//   const [isStarting, setIsStarting] = useState(false);
+//   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+//   const [progress, setProgress] = useState(0);
+//   const [status, setStatus] = useState<"idle" | "running" | "done" | "error">("idle");
+//   const [runs, setRuns] = useState<JobRun[]>([]);
+//   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+//   function cancelPolling() { if (pollTimer.current) { clearInterval(pollTimer.current); pollTimer.current = null; } }
+//   function upsertRun(run: JobRun) {
+//     setRuns(prev => {
+//       const idx = prev.findIndex(r => r.jobId === run.jobId);
+//       if (idx === -1) return [run, ...prev];
+//       const copy = [...prev]; copy[idx] = { ...copy[idx], ...run }; copy.sort((a,b) => (b.startedAt||0) - (a.startedAt||0)); return copy;
+//     });
+//     onRunUpdate?.(run);
+//   }
+
+//   /* ===== Start (Optimized + Concurrency + Fault Tolerant) ===== */
+//   async function start(params: StartParams): Promise<{ jobId: string | null; listings: number; payload: AutomationPayload }> {
+//     setIsStarting(true);
+//     setStatus("idle");
+//     setProgress(0);
+//     setCurrentJobId(null);
+//     cancelPolling();
+//     try {
+//       const selectedItemsLocal = selectedItems;  // Use memoized
+//       const payload = await buildPayload(params, selectedItemsLocal, uploadImage);
+//       const listingsCount = payload.targets.length;
+//       if (debug) console.log("Starting direct WP automation with payload:", payload);
+//       if (params.dryRun) return { jobId: null, listings: listingsCount, payload };
+
+//       const jobId = Date.now().toString();
+//       const now = Date.now();
+//       const optimisticRun: JobRun = { jobId, status: "running", progress: 0, startedAt: now, backlinks: [], successCount: 0, failCount: 0, logs: [] };
+//       upsertRun(optimisticRun);
+//       setCurrentJobId(jobId);
+//       setStatus("running");
+
+//       const total = payload.targets.length;
+//       let successCount = 0;
+//       let failCount = 0;
+//       let completedCount = 0;
+//       const newBacklinks: string[] = [];
+//       const newLogs: string[] = [];
+
+//       // CONFIGURATION: Number of simultaneous requests
+//       const CONCURRENCY_LIMIT = 5; 
+
+//       // WORKER FUNCTION: Processes one target safely
+//       const processTarget = async (target: AutomationTargetSite) => {
+//         try {
+//           const postUrl = await createPostOnSite(target.site, target.login, target.listings[0]);
+//           newBacklinks.push(postUrl);
+//           newLogs.push(`Success on ${target.site}: ${postUrl}`);
+//           successCount++;
+//         } catch (e: any) {
+//           newLogs.push(`Failed on ${target.site}: ${e?.message ?? e}`);
+//           failCount++;
+//         } finally {
+//           completedCount++;
+//           const prog = Math.round((completedCount / total) * 100);
+//           setProgress(prog);
+//           upsertRun({ 
+//             ...optimisticRun, 
+//             progress: prog, 
+//             logs: [...newLogs], 
+//             successCount, 
+//             failCount, 
+//             backlinks: [...newBacklinks] 
+//           });
+//         }
+//       };
+
+//       // CONCURRENCY QUEUE EXECUTION
+//       let index = 0;
+//       const targets = payload.targets;
+      
+//       const next = async (): Promise<void> => {
+//         while (index < total) {
+//           const currTarget = targets[index++];
+//           if(!currTarget) break;
+//           await processTarget(currTarget);
+//         }
+//       };
+
+//       const workers = [];
+//       for(let i = 0; i < Math.min(CONCURRENCY_LIMIT, total); i++) {
+//         workers.push(next());
+//       }
+      
+//       await Promise.all(workers);
+
+//       const finalStatus: "done" | "error" = failCount === 0 ? "done" : (failCount < total ? "done" : "error");
+//       const finalRun = { ...optimisticRun, status: finalStatus, finishedAt: Date.now(), progress: 100, logs: newLogs, successCount, failCount, backlinks: newBacklinks };
+//       upsertRun(finalRun);
+//       setStatus(finalStatus);
+//       setProgress(100);
+
+//       return { jobId, listings: listingsCount, payload };
+//     } catch (err: any) {
+//         console.error("Critical Failure in start:", err);
+//         setStatus("error");
+//         throw err;
+//     } finally {
+//       setIsStarting(false);
+//     }
+//   }
+
+//   useEffect(() => cancelPolling, []);
+
+//   /* Helper: fetch a saved run by id (noop now) */
+//   async function fetchRunDetails() { return null; }
+
+//   /* Helper: download export (client-side XLSX) */
+//   async function downloadRunExcel(jobId: string | null, filename = "automation_run.xlsx") {
+//     if (!jobId) throw new Error("Missing jobId");
+//     const run = runs.find(r => r.jobId === jobId);
+//     if (!run?.backlinks?.length) throw new Error("No backlinks to export");
+
+//     const wsData = [['SiteName', 'Post URL']];
+//     run.backlinks.forEach(link => {
+//       const hostname = new URL(link).hostname.replace('www.', '');
+//       wsData.push([hostname, link]);
+//     });
+
+//     const wb = XLSX.utils.book_new();
+//     const ws = XLSX.utils.aoa_to_sheet(wsData);
+//     XLSX.utils.book_append_sheet(wb, ws, 'Backlinks');
+//     XLSX.writeFile(wb, filename);
+//     return true;
+//   }
+
+//   /* Exposed API */
+//   return {
+//     search,
+//     setSearch,
+//     projects,
+//     filteredProjects,
+//     expandedProjectIds,
+//     toggleProjectExpand,
+//     selectedProjectIds,
+//     selectedItemIds,
+//     isProjectSelected,
+//     isItemSelected,
+//     setProjectChecked,
+//     setItemChecked,
+//     selectAllVisible,
+//     clearSelection,
+//     focusedItemId,
+//     setFocusedItemId,
+//     focusedItem,
+//     selectedItems,
+//     start,
+//     cancelPolling,
+//     isStarting,
+//     jobId: currentJobId,
+//     progress,
+//     status,
+//     runs,
+//     fetchRunDetails,
+//     downloadRunExcel,
+//   };
+// }  
+
+
+
+
+/**
+ * DROP-IN React + TypeScript file
+ * - Integrates Cloudinary unsigned uploads (no backend required)
+ * - Multiple-image pool (upload 5-10 images)
+ * - Random / unique assignment option used by the automation hook
+ *
+ * USAGE:
+ * 1. Create an unsigned upload preset in your Cloudinary dashboard.
+ * 2. Replace CLOUDINARY_CLOUD_NAME and CLOUDINARY_UPLOAD_PRESET below.
+ * 3. Drop this file into your project (replace your previous page file).
+ *
+ * NOTE: Unsigned presets are convenient but less secure. For production,
+ * consider server-signed uploads.
+ */
+
 /* ===== Types (match your page) ===== */
 export type GeneratedItem = {
   id: string;
@@ -6657,7 +7692,7 @@ export type UseListingAutomationOptions = {
 };
 export type StartParams = {
   sites: { site: string; username: string; password: string; type?: string }[];
-  defaults: { category?: string; keywordsDefaults?: string[]; imageUrl?: string; imageFile?: File | null; profile: { phone?: string; website?: string; email?: string; socials?: Socials; address?: Address } };
+  defaults: { category?: string; keywordsDefaults?: string[]; imageUrl?: string; imageFile?: File | null; imagePoolUrls?: string[]; profile: { phone?: string; website?: string; email?: string; socials?: Socials; address?: Address } };
   dryRun?: boolean;
 };
 export type Project = { id: string; name: string; items: GeneratedItem[] };
@@ -6683,7 +7718,7 @@ function getItemKeywords(it: GeneratedItem): string[] { if (Array.isArray(it.key
 /* ===== Image helpers (copied / compatible) ===== */
 function isBlobOrDataUrl(u: string) { return /^blob:|^data:/i.test(u); }
 function isHttpUrl(u: string) { return /^https?:\/\//i.test(u); }
-function looksLikeDirectImage(u: string) { return /\.(png|jpg|jpeg|webp)(\?.*)?$/i.test(u); }
+function looksLikeDirectImage(u: string) { return /\.(png|jpg|jpeg|webp|gif)(\?.*)?$/i.test(u); }
 function assertValidImageUrl(u: string, ctx: string) {
   if (!u) throw new Error(`Missing image URL (${ctx}).`);
   if (isBlobOrDataUrl(u)) throw new Error(`Invalid image URL (${ctx}): ${u} — blob/data URLs are not supported. Upload first.`);
@@ -6691,7 +7726,7 @@ function assertValidImageUrl(u: string, ctx: string) {
   if (!isHttpUrl(u) && !looksLikeDirectImage(u)) throw new Error(`Invalid image URL (${ctx}): ${u}`);
 }
 
-/* ===== WP API Helpers (New - Direct Calls) ===== */
+/* ===== WP API Helpers (kept for automation flow) ===== */
 async function getOrCreateTerm(termsUrl: string, taxonomy: 'category' | 'post_tag', name: string, authHeader: string): Promise<number> {
   const searchUrl = `${termsUrl}?search=${encodeURIComponent(name)}&per_page=1`;
   let res = await fetch(searchUrl, { headers: { Authorization: authHeader } });
@@ -6754,15 +7789,12 @@ async function createPostOnSite(site: string, login: { username: string; passwor
       const cid = await getOrCreateTerm(categoriesUrl, 'category', listing.category.trim(), authHeader);
       if (cid) categoryIds = [cid];
     } catch (e: any) {
-      // Non-fatal: warn and continue without category (but we expect category to be provided upstream)
       console.warn(`Category resolution failed for ${site}: ${e?.message || e}`);
     }
   }
 
-  // === JUSTIFY CONTENT ===
   const justifiedContent = `<div style="text-align: justify;">${listing.contentHtml}</div>`;
 
-  // Create post
   const postData: any = {
     title: listing.title,
     content: justifiedContent,
@@ -6775,7 +7807,6 @@ async function createPostOnSite(site: string, login: { username: string; passwor
   if (!res.ok) throw new Error(`Post creation failed: ${res.status}`);
   let post = await res.json();
 
-  // Upload and set featured image if available (non-fatal)
   if (listing.images && listing.images.length > 0) {
     const imgUrl = listing.images[0];
     try {
@@ -6799,13 +7830,53 @@ async function createPostOnSite(site: string, login: { username: string; passwor
   return post.link;
 }
 
-/* ===== Image upload helpers (for defaults) ===== */
+/* ===== Image upload helpers (Cloudinary - no backend) ===== */
+
+/**
+ * IMPORTANT: Replace these with your Cloudinary details.
+ * - CLOUDINARY_CLOUD_NAME: from Cloudinary console (account)
+ * - CLOUDINARY_UPLOAD_PRESET: create an unsigned upload preset in Cloudinary
+ *
+ * Example:
+ *   CLOUDINARY_CLOUD_NAME = "my-cloud"
+ *   CLOUDINARY_UPLOAD_PRESET = "unsigned_preset_1"
+ */
+const CLOUDINARY_CLOUD_NAME = "dq3wtgqmt";
+const CLOUDINARY_UPLOAD_PRESET = "234638328335575";
+
+/**
+ * Uploads a file to Cloudinary using unsigned preset.
+ * Returns a publicly accessible secure URL (https).
+ */
+async function cloudinaryUpload(file: File): Promise<string> {
+  if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_UPLOAD_PRESET) {
+    // Fallback: return local object URL (non-public). Notify user via console.
+    console.warn("Cloudinary config missing - returning local object URL for testing.");
+    return URL.createObjectURL(file);
+  }
+  const url = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/upload`;
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+  // optional: fd.append("folder", "your-folder");
+  const resp = await fetch(url, { method: "POST", body: fd });
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    throw new Error(`Cloudinary upload failed: ${resp.status} ${text}`);
+  }
+  const data = await resp.json();
+  // Cloudinary returns secure_url
+  if (!data?.secure_url && !data?.url) throw new Error("Cloudinary returned no URL");
+  return data.secure_url || data.url;
+}
+
 async function autoUploadImage(file: File, uploadImage?: (file: File) => Promise<string>): Promise<string> {
   if (uploadImage) {
     const u = await uploadImage(file);
     if (u && !isBlobOrDataUrl(u)) { assertValidImageUrl(u, "uploadImage()"); return u; }
   }
-  throw new Error("Image upload not implemented. Provide uploadImage callback.");
+  // Fallback to Cloudinary if no custom upload provided
+  return await cloudinaryUpload(file);
 }
 
 function extFromMime(mime: string) { if (/png/i.test(mime)) return "png"; if (/webp/i.test(mime)) return "webp"; if (/gif/i.test(mime)) return "gif"; return "jpg"; }
@@ -6821,32 +7892,47 @@ async function ensurePublicImageUrl(u: string, ctx: string, uploadImage?: (file:
   return u;
 }
 
-/* ===== Build listings & payload (category mandatory, image optional) ===== */
+/* ===== Build listings & payload (category mandatory, image optional, pool support) ===== */
 async function resolveDefaultImageUrl(imageUrl?: string, imageFile?: File | null, uploadImage?: (file: File) => Promise<string>) {
   if (imageUrl?.trim()) return await ensurePublicImageUrl(imageUrl.trim(), "defaultImageUrl", uploadImage);
   if (imageFile) { const u = await autoUploadImage(imageFile, uploadImage); assertValidImageUrl(u, "uploadedDefaultImageUrl"); return u; }
   return "";
 }
-async function buildListingsForSelected(selectedItems: GeneratedItem[], params: { keywordsDefaults?: string[]; defaultImageUrl?: string; defaultCategory?: string }, uploadImage?: (file: File) => Promise<string>): Promise<AutomationListing[]> {
-  const { keywordsDefaults = [], defaultImageUrl = "", defaultCategory = "" } = params;
+
+async function buildListingsForSelected(selectedItems: GeneratedItem[], params: { keywordsDefaults?: string[]; defaultImageUrl?: string; defaultCategory?: string; imagePoolUrls?: string[] }, uploadImage?: (file: File) => Promise<string>): Promise<AutomationListing[]> {
+  const { keywordsDefaults = [], defaultImageUrl = "", defaultCategory = "", imagePoolUrls = [] } = params;
   const listings: AutomationListing[] = [];
-  for (const it of selectedItems) {
+  for (let idx = 0; idx < selectedItems.length; idx++) {
+    const it = selectedItems[idx];
     const ownKeywords = getItemKeywords(it);
     const mergedKeywords = Array.from(new Set([...ownKeywords, ...keywordsDefaults])).filter(Boolean);
     const rawImgs = (it.images || []).filter(Boolean) as string[];
     const publicImgs: string[] = [];
     for (let i = 0; i < rawImgs.length; i++) {
       const img = rawImgs[i];
-      // ensurePublicImageUrl may throw for invalid image urls — keep that behavior for invalid urls
       const pub = await ensurePublicImageUrl(img, `item(${it.id}).images[${i}]`, uploadImage);
       publicImgs.push(pub);
     }
-    const images = publicImgs.length > 0 ? publicImgs : (defaultImageUrl ? [defaultImageUrl] : []);
+
+    // Pick image: preference order - item images > imagePool selection > defaultImageUrl
+    let chosenImages: string[] = [];
+    if (publicImgs.length > 0) {
+      chosenImages = publicImgs;
+    } else if (Array.isArray(imagePoolUrls) && imagePoolUrls.length > 0) {
+      // Random assignment
+      const pick = imagePoolUrls[Math.floor(Math.random() * imagePoolUrls.length)];
+      chosenImages = [pick];
+    } else if (defaultImageUrl) {
+      chosenImages = [defaultImageUrl];
+    } else {
+      chosenImages = [];
+    }
+
     listings.push({
       id: it.id,
       title: getItemTitle(it),
       contentHtml: getItemHtml(it),
-      images,
+      images: chosenImages,
       keywords: mergedKeywords,
       tags: mergedKeywords,
       category: defaultCategory || undefined
@@ -6855,12 +7941,12 @@ async function buildListingsForSelected(selectedItems: GeneratedItem[], params: 
   const bad = listings.filter(l => !l.title || !l.contentHtml);
   if (bad.length) throw new Error(`Some items missing title/content: ${bad.map(b => b.id).join(", ")}`);
 
-  // Images are optional — do not throw when images are missing.
   return listings;
 }
+
 async function buildPayload(params: StartParams, selectedItems: GeneratedItem[], uploadImage?: (file: File) => Promise<string>): Promise<AutomationPayload> {
-  const { sites, defaults: { keywordsDefaults, imageUrl, imageFile, profile, category } } = params;
-  
+  const { sites, defaults: { keywordsDefaults, imageUrl, imageFile, imagePoolUrls, profile, category } } = params;
+
   if (!Array.isArray(sites) || sites.length === 0) throw new Error("No sites selected.");
   if (sites.some((s) => !s.site || !s.username || !s.password)) throw new Error("Every selected site must have site + username + password.");
   if (selectedItems.length === 0) throw new Error("No items selected.");
@@ -6871,8 +7957,17 @@ async function buildPayload(params: StartParams, selectedItems: GeneratedItem[],
 
   const defaultImageUrl = await resolveDefaultImageUrl(imageUrl, imageFile, uploadImage);
 
-  const listings = await buildListingsForSelected(selectedItems, { keywordsDefaults, defaultImageUrl, defaultCategory }, uploadImage);
-  
+  const poolUrls: string[] = [];
+  if (Array.isArray(imagePoolUrls) && imagePoolUrls.length > 0) {
+    for (let i = 0; i < imagePoolUrls.length; i++) {
+      const u = imagePoolUrls[i];
+      const pub = await ensurePublicImageUrl(u, `imagePool[${i}]`, uploadImage);
+      poolUrls.push(pub);
+    }
+  }
+
+  const listings = await buildListingsForSelected(selectedItems, { keywordsDefaults, defaultImageUrl, defaultCategory, imagePoolUrls: poolUrls }, uploadImage);
+
   const targets: AutomationTargetSite[] = sites.map((s, idx) => ({ site: s.site, login: { username: s.username, password: s.password }, type: (s as any).type ?? "wordpress", listings: [listings[idx]] }));
   const payload: AutomationPayload = { profile, targets };
   return payload;
@@ -6880,7 +7975,7 @@ async function buildPayload(params: StartParams, selectedItems: GeneratedItem[],
 
 /* ===== Hook implementation (Updated - Optimized & Fault Tolerant) ===== */
 import { useState, useMemo, useEffect, useRef } from 'react';
-import * as XLSX from 'xlsx';  // Assume installed: npm i xlsx
+import * as XLSX from 'xlsx';  // npm i xlsx
 
 export function useListingAutomation(allItems: GeneratedItem[], opts: UseListingAutomationOptions = {}) {
   const {
@@ -6891,7 +7986,6 @@ export function useListingAutomation(allItems: GeneratedItem[], opts: UseListing
     onRunUpdate,
   } = opts;
 
-  /* Group by project */
   const projects: Project[] = useMemo(() => {
     const map = new Map<string, GeneratedItem[]>();
     for (const it of allItems) {
@@ -6902,7 +7996,6 @@ export function useListingAutomation(allItems: GeneratedItem[], opts: UseListing
     return Array.from(map.entries()).map(([pid, arr]) => ({ id: pid, name: arr[0]?.fileName || pid || "Untitled Project", items: arr }));
   }, [allItems]);
 
-  /* Search */
   const [search, setSearch] = useState("");
   const filteredProjects: Project[] = useMemo(() => {
     const q = search.toLowerCase().trim();
@@ -6910,7 +8003,6 @@ export function useListingAutomation(allItems: GeneratedItem[], opts: UseListing
     return projects.map(p => ({ ...p, items: p.items.filter(it => `${getItemTitle(it)} ${getItemKeywords(it).join(" ")}`.toLowerCase().includes(q)) })).filter(p => p.items.length > 0);
   }, [projects, search]);
 
-  /* Selection / expansion (unchanged) */
   const [expandedProjectIds, setExpandedProjectIds] = useState<Set<string>>(new Set());
   const toggleProjectExpand = (pid: string) => { setExpandedProjectIds(prev => { const n = new Set(prev); n.has(pid) ? n.delete(pid) : n.add(pid); return n; }); };
   const [selectedProjectIds, setSelectedProjectIds] = useState<Set<string>>(new Set());
@@ -6952,12 +8044,10 @@ export function useListingAutomation(allItems: GeneratedItem[], opts: UseListing
     if (filteredProjects.flatMap(p => p.items).length > maxSelectableItems) onMaxExceeded?.(maxSelectableItems);
   };
 
-  /* Focused preview */
   const [focusedItemId, setFocusedItemId] = useState<string>("");
   const focusedItem = useMemo(() => allItems.find(x => x.id === focusedItemId), [allItems, focusedItemId]);
   const selectedItems = useMemo(() => allItems.filter(it => selectedItemIds.has(it.id)), [allItems, selectedItemIds]);
 
-  /* ===== Job runs state (client-side) ===== */
   const [isStarting, setIsStarting] = useState(false);
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
@@ -6974,7 +8064,6 @@ export function useListingAutomation(allItems: GeneratedItem[], opts: UseListing
     onRunUpdate?.(run);
   }
 
-  /* ===== Start (Optimized + Concurrency + Fault Tolerant) ===== */
   async function start(params: StartParams): Promise<{ jobId: string | null; listings: number; payload: AutomationPayload }> {
     setIsStarting(true);
     setStatus("idle");
@@ -6982,7 +8071,7 @@ export function useListingAutomation(allItems: GeneratedItem[], opts: UseListing
     setCurrentJobId(null);
     cancelPolling();
     try {
-      const selectedItemsLocal = selectedItems;  // Use memoized
+      const selectedItemsLocal = selectedItems;
       const payload = await buildPayload(params, selectedItemsLocal, uploadImage);
       const listingsCount = payload.targets.length;
       if (debug) console.log("Starting direct WP automation with payload:", payload);
@@ -7002,10 +8091,8 @@ export function useListingAutomation(allItems: GeneratedItem[], opts: UseListing
       const newBacklinks: string[] = [];
       const newLogs: string[] = [];
 
-      // CONFIGURATION: Number of simultaneous requests
-      const CONCURRENCY_LIMIT = 5; 
+      const CONCURRENCY_LIMIT = 5;
 
-      // WORKER FUNCTION: Processes one target safely
       const processTarget = async (target: AutomationTargetSite) => {
         try {
           const postUrl = await createPostOnSite(target.site, target.login, target.listings[0]);
@@ -7030,10 +8117,8 @@ export function useListingAutomation(allItems: GeneratedItem[], opts: UseListing
         }
       };
 
-      // CONCURRENCY QUEUE EXECUTION
       let index = 0;
       const targets = payload.targets;
-      
       const next = async (): Promise<void> => {
         while (index < total) {
           const currTarget = targets[index++];
@@ -7042,11 +8127,8 @@ export function useListingAutomation(allItems: GeneratedItem[], opts: UseListing
         }
       };
 
-      const workers = [];
-      for(let i = 0; i < Math.min(CONCURRENCY_LIMIT, total); i++) {
-        workers.push(next());
-      }
-      
+      const workers: Promise<void>[] = [];
+      for(let i = 0; i < Math.min(CONCURRENCY_LIMIT, total); i++) workers.push(next());
       await Promise.all(workers);
 
       const finalStatus: "done" | "error" = failCount === 0 ? "done" : (failCount < total ? "done" : "error");
@@ -7067,10 +8149,8 @@ export function useListingAutomation(allItems: GeneratedItem[], opts: UseListing
 
   useEffect(() => cancelPolling, []);
 
-  /* Helper: fetch a saved run by id (noop now) */
   async function fetchRunDetails() { return null; }
 
-  /* Helper: download export (client-side XLSX) */
   async function downloadRunExcel(jobId: string | null, filename = "automation_run.xlsx") {
     if (!jobId) throw new Error("Missing jobId");
     const run = runs.find(r => r.jobId === jobId);
@@ -7089,7 +8169,6 @@ export function useListingAutomation(allItems: GeneratedItem[], opts: UseListing
     return true;
   }
 
-  /* Exposed API */
   return {
     search,
     setSearch,
@@ -7119,4 +8198,4 @@ export function useListingAutomation(allItems: GeneratedItem[], opts: UseListing
     fetchRunDetails,
     downloadRunExcel,
   };
-} 
+}

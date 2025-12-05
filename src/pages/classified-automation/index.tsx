@@ -21857,12 +21857,12 @@ export default function ClassifiedAutomationPage() {
     }
   }
 
-  // Quick helper to add single URL into pool
-  const addPoolUrlManually = (u: string) => {
-    if (!u) return;
-    setImagePoolUrls(prev => [...prev, u]);
-    toast.success("Image URL added to pool");
-  };
+//   // Quick helper to add single URL into pool
+//   const addPoolUrlManually = (u: string) => {
+//     if (!u) return;
+//     setImagePoolUrls(prev => [...prev, u]);
+//     toast.success("Image URL added to pool");
+//   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50">

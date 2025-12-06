@@ -1403,8 +1403,48 @@ const GEMINI_API_KEYS: string[] = ENV_KEYS?.length
   ? ENV_KEYS
   : [
       // placeholder keys — replace with env in production
-      "AIzaSyAczysookd8P7UtRQ5EOT5hsgmw6jQdBxk",
-      "AIzaSyAiuEsxN0T5okxCpWE4mTQ5eReyX5512uA",
+
+        "AIzaSyCwx7Yy_eYmoxa1IvjWsXTJyW5rlrsA0MQ ", 
+  "AIzaSyAe0z3e5lin4L1z6Nt2ocTkYYhGuFoFKX0",
+  "AIzaSyCzsDawgbCKVqp3WdcttT2FfASK0y_4I9I",
+  "AIzaSyCzsDawgbCKVqp3WdcttT2FfASK0y_4I9I",
+  "AIzaSyATrIfmnPoWxSzAfuFNAGwuCOhoDgKwrmo",
+
+"AIzaSyBk8maYpYlm8xhdh7xdBN3WMaGOCElHz3c",
+"AIzaSyC-6V5oOol-BwEcAxN2QANLWQ00B7e8Gro",
+"AIzaSyDPSHqJuFeTB3iy1oKzP_bfBWspZqDp1Ns",
+"AIzaSyCrswLWA1qrXggcM4qN_cA0ypq5jXicALg",
+"AIzaSyAq3Zt-yUT-sUgv0oE2YGATohGPv6CzHKs",
+"AIzaSyCT7hrQy66SVeZEgzwGxh1MPPBFAo8WYZI",
+"AIzaSyCYJNDJe0lpJ-EHzYFBRr9-mrJWXir9WPc",
+"AIzaSyBXXFadz-6aAiwVqsi7NuStZYrtU_AztOo",
+"AIzaSyAhNY0c1FWNuBzac39Ibxcz1YYth3f1Wq8",
+"AIzaSyCOEJxNcRKaGQ78jtQBNRA2U5hS1qNJ0oY",
+"AIzaSyCHsFMCg9jTW2NmA0hHZhnIvZOi5wWaXqw",
+"AIzaSyA1NS-kO_cmc3rVv6mzXPzeLih7T0cHA8A",
+"AIzaSyC3bmg3-gT5eXUZsmcWAmqBt28Ha3kZYG4",
+"AIzaSyC6zNXE1cI3vcumVX__K70MCx5w1nZtWlQ",
+"AIzaSyAqznrpwn545Q_K6G1CGTYdiT8f0heSbBA",
+"AIzaSyBB0b0tUQtJStLtTY7cLmd7ks3-gyzkyDE",
+"AIzaSyCFvhfE895eY1iFSVRANLKBnVSEC5UjLhI",
+"AIzaSyCA8LGb9zPtsn1zA_zz18A8C5G5-0DBOhI",
+"AIzaSyAcFQzP76tiIOwPRRPP_jq5NZFuJqxGIk4",
+"AIzaSyCkR3il0FGLaAa1eqvwaE9fxr5svqrKLYE",
+"AIzaSyA4R9wf1kFRpdBWBbphv_3FE7XiafrkCvI",
+"AIzaSyCKko-cEaHurNhKrebpXdDmY5IQBgakB9k",
+"AIzaSyCJKLbV-8P8IhgWvixnfQHUDjM3Cqw51pI",
+"AIzaSyALzmhTM6_JG_-MTUxEdo-k025CnA_jx94",
+"AIzaSyD02sTpIxXTP922nKESd4GfhexcA3j66Z0",
+"AIzaSyDbOtpJ3IVRhIeaqEmZsCtNmvFA2Ev3_0w",
+"AIzaSyA3tStLV1cZfaZ1h4Csh2_VaLSHHlsfS6U",
+"AIzaSyCehpv_nOaBdk2yNQBiDvef55SSA9sFRPE",
+"AIzaSyDpk2ozRP3yZjllMosmTVf3u4yZVmR4e8Q",
+"AIzaSyAe0b7vdDpH1F0lwe6srWN3CPAKjpuGi-Y",
+"AIzaSyAe0b7vdDpH1F0lwe6srWN3CPAKjpuGi-Y",
+"AIzaSyAczysookd8P7UtRQ5EOT5hsgmw6jQdBxk",
+"AIzaSyAiuEsxN0T5okxCpWE4mTQ5eReyX5512uA",
+
+      
     ];
 
 if (!GEMINI_API_KEYS.length) {
